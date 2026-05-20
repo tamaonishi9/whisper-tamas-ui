@@ -1,0 +1,23 @@
+[hotkey]
+obsidian = "alt+q"
+prompt = "alt+w"
+exit = "esc"
+
+[whisper]
+model_size = "small"
+language = "ja"
+device = "cpu" # "cpu" / "cuda"
+compute_type = "int8" # "int8" / GPUなら "float16" なども候補
+
+[audio]
+sample_rate = 16000
+channels = 1
+dtype = "float32"
+min_record_seconds = 0.2
+
+[output]
+obsidian_newlines = 1
+
+[tray]
+enabled = true
+tooltip = "whisper-tamas-ui"
