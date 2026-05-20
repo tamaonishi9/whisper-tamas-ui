@@ -1,4 +1,4 @@
-﻿import pystray
+import pystray
 from PIL import Image, ImageDraw
 
 from app_logging import get_logger
@@ -15,6 +15,7 @@ class TrayController:
         self.icon: pystray.Icon | None = None
         self.tooltip = tooltip.strip() if tooltip else APP_NAME
 
+    # 有効/無効状態に応じたトレイアイコン画像を生成
     def create_image(self, enabled: bool = True) -> Image.Image:
         bg = "black" if enabled else "gray"
         fg = "white"
@@ -24,6 +25,7 @@ class TrayController:
         draw.rectangle((16, 16, 48, 48), fill=fg)
         return image
 
+    # 現在の有効・録音・モード状態をまとめたステータス文字列を返す
     def get_status_title(self) -> str:
         with self.app_state.lock:
             enabled = self.app_state.enabled
@@ -42,10 +44,14 @@ class TrayController:
 
         return f"Status: {enabled_text} / {recording_text} / Mode: {mode_text}"
 
+    # 入力モード表示ラベルを返す
     def get_input_mode_label(self, item=None) -> str:
-        mode_text = "Push2Talk" if self.app_state.input_mode == "p2t" else "Toggle"
+        with self.app_state.lock:
+            input_mode = self.app_state.input_mode
+        mode_text = "Push2Talk" if input_mode == "p2t" else "Toggle"
         return f"Input Mode: {mode_text}"
 
+    # スタートアップ登録状態ラベルを返す
     def get_startup_status_label(self, item=None) -> str:
         return (
             "Startup: Registered"
@@ -53,6 +59,7 @@ class TrayController:
             else "Startup: Not Registered"
         )
 
+    # トレイの右クリックメニューを構築して返す
     def build_menu(self) -> pystray.Menu:
         return pystray.Menu(
             pystray.MenuItem(
@@ -104,6 +111,7 @@ class TrayController:
             ),
         )
 
+    # アイコン・タイトル・メニューをAppStateに合わせて再描画
     def refresh(self) -> None:
         if self.icon is None:
             return
@@ -116,6 +124,7 @@ class TrayController:
         self.icon.menu = self.build_menu()
         self.icon.update_menu()
 
+    # 音声入力の有効/無効をトグル
     def toggle_enabled(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.enabled = not self.app_state.enabled
@@ -124,6 +133,7 @@ class TrayController:
         logger.info("Voice input %s", "enabled" if enabled else "disabled")
         self.refresh()
 
+    # スタートアップ登録スクリプトを実行
     def register_startup(self, icon: pystray.Icon, item) -> None:
         if run_startup_script("install_startup.ps1"):
             logger.info("Startup registration completed")
@@ -131,6 +141,7 @@ class TrayController:
             logger.warning("Startup registration failed")
         self.refresh()
 
+    # スタートアップ登録解除スクリプトを実行
     def unregister_startup(self, icon: pystray.Icon, item) -> None:
         if run_startup_script("uninstall_startup.ps1"):
             logger.info("Startup unregistration completed")
@@ -138,12 +149,14 @@ class TrayController:
             logger.warning("Startup unregistration failed")
         self.refresh()
 
+    # AppStateにexit要求をセットしてトレイを停止
     def request_exit(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.should_exit = True
         logger.info("Exit requested from tray")
         icon.stop()
 
+    # トレイアイコンを初期化して起動（ブロッキング）
     def start(self) -> None:
         with self.app_state.lock:
             enabled = self.app_state.enabled
@@ -157,16 +170,19 @@ class TrayController:
         self.icon.title = f"{self.tooltip} | {self.get_status_title()}"
         self.icon.run()
 
+    # トレイアイコンを停止
     def stop(self) -> None:
         if self.icon is not None:
             self.icon.stop()
 
+    # 入力モードをPush2Talkに切替
     def set_input_mode_p2t(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.input_mode = "p2t"
         logger.info("Input mode switched to Push2Talk")
         self.refresh()
 
+    # 入力モードをToggleに切替
     def set_input_mode_toggle(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.input_mode = "toggle"

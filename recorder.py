@@ -21,12 +21,14 @@ class PushToTalkRecorder:
         self._lock = threading.Lock()
         self.is_recording = False
 
+    # sounddeviceのコールバック: 音声フレームをスレッドセーフに蓄積
     def _callback(self, indata, frames, time_info, status) -> None:
         if status:
             logger.warning("Recording warning: %s", status)
         with self._lock:
             self._frames.append(indata.copy())
 
+    # 入力ストリームを開いて録音を開始
     def start(self) -> None:
         if self.is_recording:
             return
@@ -43,6 +45,7 @@ class PushToTalkRecorder:
         self._stream.start()
         self.is_recording = True
 
+    # ストリームを停止し、録音データを結合して返す
     def stop(self) -> np.ndarray | None:
         if not self.is_recording:
             return None

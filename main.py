@@ -1,4 +1,4 @@
-﻿import ctypes
+import ctypes
 import os
 from pathlib import Path
 import sys
@@ -17,6 +17,7 @@ from tray import TrayController
 logger = get_logger(__name__)
 
 
+# faster_whisper が内部で av をimportするため、av未インストール環境向けにスタブを注入
 def install_faster_whisper_av_stub() -> None:
     if "av" in sys.modules:
         return
@@ -30,16 +31,19 @@ def install_faster_whisper_av_stub() -> None:
     sys.modules["av"] = av_stub
 
 
+# OpenMPライブラリ重複ロードによるエラーを回避
 def configure_ctranslate2_runtime() -> None:
     os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 
+# 凍結実行ファイルとスクリプト起動の両方に対応したベースディレクトリを返す
 def get_app_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parent
 
 
+# PyInstaller凍結時のみ、ctranslate2等のDLLをWindowsのDLL検索パスに追加してプリロード
 def configure_frozen_dll_directories() -> None:
     if not getattr(sys, "frozen", False):
         return
@@ -68,6 +72,7 @@ def configure_frozen_dll_directories() -> None:
             logger.info("Preloaded DLL: %s", dll_path.name)
 
 
+# 空文字・"none"文字列をNoneに統一し、未設定ホットキーを表現
 def normalize_optional_hotkey(value: str | None) -> str | None:
     if value is None:
         return None
@@ -78,6 +83,7 @@ def normalize_optional_hotkey(value: str | None) -> str | None:
     return normalized
 
 
+# WhisperModelを生成して返す。importまたは生成失敗時はNoneを返す
 def create_model(
     model_size: str,
     device: str,
@@ -124,20 +130,24 @@ def create_model(
     return model
 
 
+# 設定読み込み・モデル初期化・各コンポーネント起動
 def main() -> None:
     setup_logging(get_app_base_dir())
     config = load_config()
     logger.info("Application start")
 
+    # ホットキー設定の正規化
     hotkey_markdown = normalize_optional_hotkey(config["hotkey"]["markdown"])
     hotkey_plain_text = normalize_optional_hotkey(config["hotkey"]["plain_text"])
     exit_hotkey = normalize_optional_hotkey(config["hotkey"]["exit"])
 
+    # 音声設定
     sample_rate = config["audio"]["sample_rate"]
     channels = config["audio"]["channels"]
     dtype = config["audio"]["dtype"]
     min_record_seconds = config["audio"]["min_record_seconds"]
 
+    # Whisper設定
     model_size = config["whisper"]["model_size"]
     language = config["whisper"]["language"]
     device = config["whisper"]["device"]
@@ -145,6 +155,7 @@ def main() -> None:
     cpu_threads = config["whisper"].get("cpu_threads")
     num_workers = config["whisper"]["num_workers"]
 
+    # 出力・トレイ設定
     markdown_newlines = config["output"]["markdown_newlines"]
     tray_enabled = config["tray"]["enabled"]
     tray_tooltip = config["tray"]["tooltip"]
@@ -159,18 +170,21 @@ def main() -> None:
         num_workers,
     )
 
+    # ホットキー未設定チェック
     if hotkey_markdown is None and hotkey_plain_text is None:
         logger.error(
             "Configuration error: either the Markdown or Plain Text hotkey must be configured"
         )
         return
 
+    # モデル読み込み
     logger.info("Loading model...")
     model = create_model(model_size, device, compute_type, cpu_threads, num_workers)
     if model is None:
         return
     logger.info("Model loaded")
 
+    # 各コンポーネント初期化
     text_rules = TextRules.from_config(config)
     recorder = PushToTalkRecorder(
         sample_rate=sample_rate,
@@ -180,9 +194,11 @@ def main() -> None:
     app_state = AppState(enabled=tray_enabled)
     tray = TrayController(app_state, tooltip=tray_tooltip)
 
+    # トレイを別スレッドで起動
     tray_thread = threading.Thread(target=tray.start, daemon=True)
     tray_thread.start()
 
+    # メインコントローラーを起動（ブロッキング）
     controller = AppController(
         recorder=recorder,
         model=model,

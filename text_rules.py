@@ -16,6 +16,7 @@ class TextRules:
     def _normalize_patterns(patterns: list[str]) -> list[str]:
         return [pattern.strip() for pattern in patterns if pattern.strip()]
 
+    # 設定dictからTextRulesを生成
     @classmethod
     def from_config(cls, config: dict) -> "TextRules":
         rules = config.get("text_rules", {})
@@ -25,16 +26,19 @@ class TextRules:
             markdown_heading_patterns=list(rules.get("markdown_heading_patterns", [])),
         )
 
+    # 空白・改行を正規化してテキストを1行に整形
     def normalize_text(self, text: str) -> str:
         text = text.strip()
         text = text.replace("\n", " ")
         return " ".join(text.split())
 
+    # モードに応じてテキストを整形（markdownのみ特殊処理）
     def format_text_by_mode(self, text: str, mode: str | None) -> str:
         if mode == "markdown":
             return self.format_markdown_text(text)
         return text
 
+    # フィラー除去→タイトル/見出しパターン判定→箇条書きにフォールバック
     def format_markdown_text(self, text: str) -> str:
         text = self.strip_filler(text).strip()
         if not text:
@@ -60,6 +64,7 @@ class TextRules:
 
         return f"- {text}"
 
+    # 先頭のフィラー語句を1つ除去
     def strip_filler(self, text: str) -> str:
         text = text.strip()
 
@@ -69,6 +74,7 @@ class TextRules:
 
         return text
 
+    # プレフィックスリストからマッチ用正規表現を構築（例: "タイトル:〇〇"）
     @staticmethod
     def _build_prefixed_pattern(prefixes: list[str]) -> str | None:
         if not prefixes:

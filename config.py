@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
 }
 
 
+# config.tomlを読み込みデフォルト設定にマージして返す。読み込み失敗時はデフォルトを返す
 def load_config(path: str = "config.toml") -> dict:
     config_path = resolve_config_path(path)
 
@@ -74,6 +75,7 @@ def load_config(path: str = "config.toml") -> dict:
     return merge_config(deepcopy(DEFAULT_CONFIG), user_config)
 
 
+# 凍結実行ファイルとスクリプト起動の両方に対応した設定ファイルパスを解決
 def resolve_config_path(path: str) -> Path:
     config_path = Path(path)
     if config_path.is_absolute():
@@ -87,6 +89,7 @@ def resolve_config_path(path: str) -> Path:
     return base_dir / config_path
 
 
+# デフォルト設定にユーザー設定を再帰的に上書きマージ
 def merge_config(default: dict, override: dict) -> dict:
     result = default.copy()
 

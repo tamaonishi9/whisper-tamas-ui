@@ -23,8 +23,7 @@
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
-pip install pyinstaller
+pip install -r requirements-dev.txt
 ```
 
 ## 動作確認

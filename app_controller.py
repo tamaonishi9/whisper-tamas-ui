@@ -42,6 +42,7 @@ class AppController:
         self.min_record_seconds = min_record_seconds
         self.markdown_newlines = markdown_newlines
 
+    # キー入力を監視して録音の開始・停止を制御するメインループ
     def run(self) -> None:
         logger.info("")
         logger.info("Idle...")
@@ -55,6 +56,7 @@ class AppController:
             logger.info("[%s] Exit", self.exit_hotkey)
         logger.info("")
 
+        # 状態変数初期化
         pressed_mode = None
         record_mode = None
         record_start = 0.0
@@ -63,6 +65,7 @@ class AppController:
 
         try:
             while True:
+                # 終了要求・有効状態の確認
                 with self.app_state.lock:
                     if self.app_state.should_exit:
                         logger.info("Exiting")
@@ -70,10 +73,12 @@ class AppController:
                     enabled = self.app_state.enabled
                     input_mode = self.app_state.input_mode
 
+                # 終了ホットキーチェック
                 if self.exit_hotkey is not None and keyboard.is_pressed(self.exit_hotkey):
                     logger.info("Exiting")
                     break
 
+                # 無効化中に録音中だった場合は強制停止
                 if self.recorder.is_recording and not enabled:
                     self.recorder.stop()
                     record_mode = None
@@ -91,6 +96,7 @@ class AppController:
                     time.sleep(0.05)
                     continue
 
+                # キー押下状態を取得
                 markdown_pressed = (
                     self.hotkey_markdown is not None
                     and keyboard.is_pressed(self.hotkey_markdown)
@@ -110,6 +116,7 @@ class AppController:
                 markdown_just_pressed = markdown_pressed and not prev_markdown_pressed
                 plain_text_just_pressed = plain_text_pressed and not prev_plain_text_pressed
 
+                # P2Tモード: 押している間録音、離したら停止
                 if input_mode == "p2t":
                     active_hotkey = self.get_hotkey_for_mode(record_mode)
 
@@ -132,6 +139,7 @@ class AppController:
                         self.finish_recording(record_mode, record_start)
                         record_mode = None
 
+                # Toggleモード: キー押下で録音開始/停止をトグル
                 elif input_mode == "toggle":
                     just_pressed_mode = None
                     if markdown_just_pressed:
@@ -167,6 +175,7 @@ class AppController:
         except KeyboardInterrupt:
             logger.info("Exited with Ctrl+C")
         finally:
+            # 終了処理: AppState更新・ストリーム停止・トレイ停止
             with self.app_state.lock:
                 self.app_state.should_exit = True
                 self.app_state.is_recording = False
@@ -177,6 +186,7 @@ class AppController:
 
             self.tray.stop()
 
+    # サウンド再生→ストリーム開始→AppState更新。失敗時はNoneを返す
     def begin_recording(self, mode: str) -> float | None:
         try:
             play_start_sound()
@@ -196,6 +206,7 @@ class AppController:
         logger.info("Recording started")
         return record_start
 
+    # 録音停止→文字起こし→テキスト整形→クリップボードコピー
     def finish_recording(self, record_mode: str | None, record_start: float) -> None:
         audio = self.recorder.stop()
         record_seconds = time.time() - record_start
@@ -256,6 +267,7 @@ class AppController:
 
         self.tray.refresh()
 
+    # 現在の録音を破棄して別モードで録音を再開
     def restart_recording(self, mode: str) -> float | None:
         self.recorder.stop()
 
@@ -267,6 +279,7 @@ class AppController:
         logger.info("Discarding current recording and starting over")
         return self.begin_recording(mode)
 
+    # ステレオ音声をモノラルに変換してWhisperで文字起こし
     def transcribe_audio(self, audio) -> str:
         if audio.ndim == 2:
             audio = audio[:, 0]
@@ -275,11 +288,13 @@ class AppController:
         text = "".join(segment.text for segment in segments)
         return self.text_rules.normalize_text(text)
 
+    # Markdownモード時のみ末尾に指定行数の改行を付加
     def add_output_spacing(self, text: str, mode: str | None) -> str:
         if mode == "markdown":
             return text + ("\n" * max(0, self.markdown_newlines))
         return text
 
+    # モード名に対応するホットキー文字列を返す
     def get_hotkey_for_mode(self, mode: str | None) -> str | None:
         if mode == "markdown":
             return self.hotkey_markdown
