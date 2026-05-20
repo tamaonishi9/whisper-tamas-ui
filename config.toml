@@ -1,4 +1,4 @@
-[hotkey]
+﻿[hotkey]
 markdown = "alt+q"
 plain_text = "alt+w"
 exit = ""
@@ -7,8 +7,7 @@ exit = ""
 model_size = "small"
 language = "ja"
 device = "cpu" # "cpu" / "cuda"
-compute_type = "int8" # "int8" / GPUなら "float16" なども候補
-
+compute_type = "int8" # "int8" / "float16" for GPU setups
 num_workers = 1
 
 [audio]
@@ -19,6 +18,30 @@ min_record_seconds = 0.2
 
 [output]
 markdown_newlines = 1
+
+[text_rules]
+filler_phrases = [
+  "えーっと、",
+  "えーっと",
+  "えーと、",
+  "えーと",
+  "えっと、",
+  "えっと",
+  "あのー",
+  "あのー、",
+  "あの、",
+  "あの",
+  "えー、",
+  "えー",
+]
+markdown_title_patterns = [
+  "タイトル",
+  "title",
+]
+markdown_heading_patterns = [
+  "見出し",
+  "heading",
+]
 
 [tray]
 enabled = true

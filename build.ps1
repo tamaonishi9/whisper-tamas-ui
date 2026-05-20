@@ -16,3 +16,13 @@ Copy-Item `
   -LiteralPath (Join-Path $projectRoot "config.toml") `
   -Destination (Join-Path $distDir "config.toml") `
   -Force
+
+Copy-Item `
+  -LiteralPath (Join-Path $projectRoot "install_startup.ps1") `
+  -Destination (Join-Path $distDir "install_startup.ps1") `
+  -Force
+
+Copy-Item `
+  -LiteralPath (Join-Path $projectRoot "uninstall_startup.ps1") `
+  -Destination (Join-Path $distDir "uninstall_startup.ps1") `
+  -Force

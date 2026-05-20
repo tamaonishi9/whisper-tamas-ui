@@ -26,6 +26,24 @@ DEFAULT_CONFIG = {
     "output": {
         "markdown_newlines": 1,
     },
+    "text_rules": {
+        "filler_phrases": [
+            "えーと、",
+            "えーと",
+            "えっと、",
+            "えっと",
+            "あの、",
+            "あの",
+        ],
+        "markdown_title_patterns": [
+            "タイトル",
+            "title",
+        ],
+        "markdown_heading_patterns": [
+            "見出し",
+            "heading",
+        ],
+    },
     "tray": {
         "enabled": True,
         "tooltip": "whisper-tamas-ui",
@@ -41,8 +59,8 @@ def load_config(path: str = "config.toml") -> dict:
         return deepcopy(DEFAULT_CONFIG)
 
     try:
-        with open(config_path, "rb") as f:
-            user_config = tomllib.load(f)
+        config_text = config_path.read_text(encoding="utf-8-sig")
+        user_config = tomllib.loads(config_text)
     except Exception as e:
         print(f"[config] load error: {e}")
         return deepcopy(DEFAULT_CONFIG)
