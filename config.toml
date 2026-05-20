@@ -1,7 +1,7 @@
 [hotkey]
 obsidian = "alt+q"
 prompt = "alt+w"
-exit = "esc"
+exit = ""
 
 [whisper]
 model_size = "small"

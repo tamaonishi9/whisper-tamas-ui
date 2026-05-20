@@ -39,22 +39,19 @@ class TrayController:
     def build_menu(self) -> pystray.Menu:
         return pystray.Menu(
             pystray.MenuItem(
-                lambda item: "無効化" if self.app_state.enabled else "有効化",
-                self.toggle_enabled,
-            ),
-            pystray.MenuItem(
                 lambda item: self.get_status_title(),
                 lambda icon, item: None,
                 enabled=False,
             ),
             pystray.MenuItem(
-                "終了",
-                self.request_exit,
-            ),
-            pystray.MenuItem(
                 lambda item: f"操作モード: {'P2T' if self.app_state.input_mode == 'p2t' else 'Toggle'}",
                 lambda icon, item: None,
                 enabled=False,
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                lambda item: "無効化" if self.app_state.enabled else "有効化",
+                self.toggle_enabled,
             ),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
@@ -66,6 +63,11 @@ class TrayController:
                 "Toggle",
                 self.set_input_mode_toggle,
                 checked=lambda item: self.app_state.input_mode == "toggle",
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                "終了",
+                self.request_exit,
             ),
         )
 
@@ -97,9 +99,9 @@ class TrayController:
 
     def start(self) -> None:
         self.icon = pystray.Icon(
-            "whisper_tamas_ui",
+            "Whisper Tamas",
             self.create_image(enabled=True),
-            "whisper-tamas-ui",
+            "Whisper Tamas",
         )
         self.icon.menu = self.build_menu()
         self.icon.title = self.get_status_title()

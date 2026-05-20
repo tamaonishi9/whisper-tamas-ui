@@ -21,9 +21,9 @@ from tray import TrayController
 # =========================
 config = load_config()
 
-HOTKEY_OBSIDIAN = config["hotkey"]["obsidian"]
-HOTKEY_PROMPT = config["hotkey"]["prompt"]
-EXIT_HOTKEY = config["hotkey"]["exit"]
+HOTKEY_OBSIDIAN_RAW = config["hotkey"]["obsidian"]
+HOTKEY_PROMPT_RAW = config["hotkey"]["prompt"]
+EXIT_HOTKEY_RAW = config["hotkey"]["exit"]
 
 SAMPLE_RATE = config["audio"]["sample_rate"]
 CHANNELS = config["audio"]["channels"]
@@ -118,6 +118,23 @@ def transcribe_audio(model: WhisperModel, audio: np.ndarray) -> str:
 
     text = "".join(segment.text for segment in segments)
     return normalize_text(text)
+
+
+def normalize_optional_hotkey(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = str(value).strip()
+    if not normalized:
+        return None
+    if normalized.lower() == "none":
+        return None
+    return normalized
+
+
+HOTKEY_OBSIDIAN = normalize_optional_hotkey(HOTKEY_OBSIDIAN_RAW)
+HOTKEY_PROMPT = normalize_optional_hotkey(HOTKEY_PROMPT_RAW)
+EXIT_HOTKEY = normalize_optional_hotkey(EXIT_HOTKEY_RAW)
 
 
 # =========================
@@ -319,10 +336,31 @@ def finish_recording(
     tray.refresh()
 
 
+def restart_recording(
+    recorder: PushToTalkRecorder,
+    app_state: AppState,
+    tray: TrayController,
+    mode: str,
+) -> float | None:
+    recorder.stop()
+
+    with app_state.lock:
+        app_state.is_recording = False
+        app_state.current_mode = None
+
+    tray.refresh()
+    print("録音を破棄して再開します")
+    return begin_recording(recorder, app_state, tray, mode)
+
+
 # =========================
 # メイン
 # =========================
 def main() -> None:
+    if HOTKEY_OBSIDIAN is None and HOTKEY_PROMPT is None:
+        print("設定エラー: Obsidian用またはPrompt用のどちらかのホットキーは必須です")
+        return
+
     print("モデルロード中...")
     try:
         model = WhisperModel(
@@ -348,9 +386,12 @@ def main() -> None:
 
     print("")
     print("待機中...")
-    print(f"[{HOTKEY_OBSIDIAN}] Obsidian用で録音")
-    print(f"[{HOTKEY_PROMPT}] Prompt用で録音")
-    print(f"[{EXIT_HOTKEY}] 終了")
+    if HOTKEY_OBSIDIAN is not None:
+        print(f"[{HOTKEY_OBSIDIAN}] Obsidian用で録音")
+    if HOTKEY_PROMPT is not None:
+        print(f"[{HOTKEY_PROMPT}] Prompt用で録音")
+    if EXIT_HOTKEY is not None:
+        print(f"[{EXIT_HOTKEY}] 終了")
     print("")
 
     pressed_mode = None
@@ -368,7 +409,7 @@ def main() -> None:
                 enabled = app_state.enabled
                 input_mode = app_state.input_mode
 
-            if keyboard.is_pressed(EXIT_HOTKEY):
+            if EXIT_HOTKEY is not None and keyboard.is_pressed(EXIT_HOTKEY):
                 print("終了します")
                 break
 
@@ -389,8 +430,12 @@ def main() -> None:
                 time.sleep(0.05)
                 continue
 
-            obsidian_pressed = keyboard.is_pressed(HOTKEY_OBSIDIAN)
-            prompt_pressed = keyboard.is_pressed(HOTKEY_PROMPT)
+            obsidian_pressed = (
+                HOTKEY_OBSIDIAN is not None and keyboard.is_pressed(HOTKEY_OBSIDIAN)
+            )
+            prompt_pressed = (
+                HOTKEY_PROMPT is not None and keyboard.is_pressed(HOTKEY_PROMPT)
+            )
 
             if obsidian_pressed:
                 pressed_mode = "obsidian"
@@ -457,15 +502,18 @@ def main() -> None:
                         )
                         record_mode = None
                     else:
-                        finish_recording(
+                        restarted_at = restart_recording(
                             recorder,
-                            model,
                             app_state,
                             tray,
-                            record_mode,
-                            record_start,
+                            just_pressed_mode,
                         )
-                        record_mode = None
+                        if restarted_at is not None:
+                            record_mode = just_pressed_mode
+                            record_start = restarted_at
+                        else:
+                            record_mode = None
+                            time.sleep(0.1)
 
             prev_obsidian_pressed = obsidian_pressed
             prev_prompt_pressed = prompt_pressed
