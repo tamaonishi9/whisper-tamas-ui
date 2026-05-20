@@ -27,10 +27,10 @@ class TrayController:
         enabled_text = "有効" if enabled else "無効"
         recording_text = "録音中" if is_recording else "待機中"
 
-        if current_mode == "obsidian":
-            mode_text = "Obsidian"
-        elif current_mode == "prompt":
-            mode_text = "Prompt"
+        if current_mode == "markdown":
+            mode_text = "Markdown"
+        elif current_mode == "plain_text":
+            mode_text = "Plain Text"
         else:
             mode_text = "-"
 

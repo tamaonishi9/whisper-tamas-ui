@@ -1,4 +1,4 @@
-﻿import re
+import re
 import time
 import threading
 from typing import List
@@ -21,8 +21,8 @@ from tray import TrayController
 # =========================
 config = load_config()
 
-HOTKEY_OBSIDIAN_RAW = config["hotkey"]["obsidian"]
-HOTKEY_PROMPT_RAW = config["hotkey"]["prompt"]
+HOTKEY_MARKDOWN_RAW = config["hotkey"]["markdown"]
+HOTKEY_PLAIN_TEXT_RAW = config["hotkey"]["plain_text"]
 EXIT_HOTKEY_RAW = config["hotkey"]["exit"]
 
 SAMPLE_RATE = config["audio"]["sample_rate"]
@@ -35,7 +35,7 @@ DEVICE = config["whisper"]["device"]
 COMPUTE_TYPE = config["whisper"]["compute_type"]
 
 MIN_RECORD_SECONDS = config["audio"]["min_record_seconds"]
-OBSIDIAN_NEWLINES = config["output"]["obsidian_newlines"]
+MARKDOWN_NEWLINES = config["output"]["markdown_newlines"]
 
 
 # =========================
@@ -132,8 +132,8 @@ def normalize_optional_hotkey(value: str | None) -> str | None:
     return normalized
 
 
-HOTKEY_OBSIDIAN = normalize_optional_hotkey(HOTKEY_OBSIDIAN_RAW)
-HOTKEY_PROMPT = normalize_optional_hotkey(HOTKEY_PROMPT_RAW)
+HOTKEY_MARKDOWN = normalize_optional_hotkey(HOTKEY_MARKDOWN_RAW)
+HOTKEY_PLAIN_TEXT = normalize_optional_hotkey(HOTKEY_PLAIN_TEXT_RAW)
 EXIT_HOTKEY = normalize_optional_hotkey(EXIT_HOTKEY_RAW)
 
 
@@ -141,14 +141,14 @@ EXIT_HOTKEY = normalize_optional_hotkey(EXIT_HOTKEY_RAW)
 # mode別の整形
 # =========================
 def format_text_by_mode(text: str, mode: str | None) -> str:
-    if mode == "obsidian":
-        return format_obsidian_text(text)
-    if mode == "prompt":
+    if mode == "markdown":
+        return format_markdown_text(text)
+    if mode == "plain_text":
         return text
     return text
 
 
-def format_obsidian_text(text: str) -> str:
+def format_markdown_text(text: str) -> str:
     text = strip_filler(text)
     text = text.strip()
 
@@ -196,22 +196,22 @@ def strip_filler(text: str) -> str:
 
 
 def add_output_spacing(text: str, mode: str | None) -> str:
-    if mode == "obsidian":
+    if mode == "markdown":
         try:
-            newline_count = max(0, int(OBSIDIAN_NEWLINES))
+            newline_count = max(0, int(MARKDOWN_NEWLINES))
         except (TypeError, ValueError):
             newline_count = 1
         return text + ("\n" * newline_count)
-    if mode == "prompt":
+    if mode == "plain_text":
         return text
     return text
 
 
 def get_hotkey_for_mode(mode: str | None) -> str | None:
-    if mode == "obsidian":
-        return HOTKEY_OBSIDIAN
-    if mode == "prompt":
-        return HOTKEY_PROMPT
+    if mode == "markdown":
+        return HOTKEY_MARKDOWN
+    if mode == "plain_text":
+        return HOTKEY_PLAIN_TEXT
     return None
 
 
@@ -357,8 +357,10 @@ def restart_recording(
 # メイン
 # =========================
 def main() -> None:
-    if HOTKEY_OBSIDIAN is None and HOTKEY_PROMPT is None:
-        print("設定エラー: Obsidian用またはPrompt用のどちらかのホットキーは必須です")
+    if HOTKEY_MARKDOWN is None and HOTKEY_PLAIN_TEXT is None:
+        print(
+            "設定エラー: Markdown用またはPlain Text用のどちらかのホットキーは必須です"
+        )
         return
 
     print("モデルロード中...")
@@ -386,10 +388,10 @@ def main() -> None:
 
     print("")
     print("待機中...")
-    if HOTKEY_OBSIDIAN is not None:
-        print(f"[{HOTKEY_OBSIDIAN}] Obsidian用で録音")
-    if HOTKEY_PROMPT is not None:
-        print(f"[{HOTKEY_PROMPT}] Prompt用で録音")
+    if HOTKEY_MARKDOWN is not None:
+        print(f"[{HOTKEY_MARKDOWN}] Markdown用で録音")
+    if HOTKEY_PLAIN_TEXT is not None:
+        print(f"[{HOTKEY_PLAIN_TEXT}] Plain Text用で録音")
     if EXIT_HOTKEY is not None:
         print(f"[{EXIT_HOTKEY}] 終了")
     print("")
@@ -397,8 +399,8 @@ def main() -> None:
     pressed_mode = None
     record_mode = None
     record_start = 0.0
-    prev_obsidian_pressed = False
-    prev_prompt_pressed = False
+    prev_markdown_pressed = False
+    prev_plain_text_pressed = False
 
     try:
         while True:
@@ -430,32 +432,36 @@ def main() -> None:
                 time.sleep(0.05)
                 continue
 
-            obsidian_pressed = (
-                HOTKEY_OBSIDIAN is not None and keyboard.is_pressed(HOTKEY_OBSIDIAN)
+            # 音声出力モードのホットキー押下判定
+            markdown_pressed = HOTKEY_MARKDOWN is not None and keyboard.is_pressed(
+                HOTKEY_MARKDOWN
             )
-            prompt_pressed = (
-                HOTKEY_PROMPT is not None and keyboard.is_pressed(HOTKEY_PROMPT)
+            plain_text_pressed = HOTKEY_PLAIN_TEXT is not None and keyboard.is_pressed(
+                HOTKEY_PLAIN_TEXT
             )
 
-            if obsidian_pressed:
-                pressed_mode = "obsidian"
-            elif prompt_pressed:
-                pressed_mode = "prompt"
+            if markdown_pressed:
+                pressed_mode = "markdown"
+            elif plain_text_pressed:
+                pressed_mode = "plain_text"
             else:
                 pressed_mode = None
 
-            obsidian_just_pressed = obsidian_pressed and not prev_obsidian_pressed
-            prompt_just_pressed = prompt_pressed and not prev_prompt_pressed
+            markdown_just_pressed = markdown_pressed and not prev_markdown_pressed
+            plain_text_just_pressed = plain_text_pressed and not prev_plain_text_pressed
 
+            # 入力モードで分岐
             if input_mode == "p2t":
                 active_hotkey = get_hotkey_for_mode(record_mode)
 
                 if pressed_mode is not None and not recorder.is_recording:
-                    started_at = begin_recording(recorder, app_state, tray, pressed_mode)
+                    started_at = begin_recording(
+                        recorder, app_state, tray, pressed_mode
+                    )
                     if started_at is None:
                         time.sleep(0.1)
-                        prev_obsidian_pressed = obsidian_pressed
-                        prev_prompt_pressed = prompt_pressed
+                        prev_markdown_pressed = markdown_pressed
+                        prev_plain_text_pressed = plain_text_pressed
                         continue
 
                     record_mode = pressed_mode
@@ -478,14 +484,16 @@ def main() -> None:
 
             elif input_mode == "toggle":
                 just_pressed_mode = None
-                if obsidian_just_pressed:
-                    just_pressed_mode = "obsidian"
-                elif prompt_just_pressed:
-                    just_pressed_mode = "prompt"
+                if markdown_just_pressed:
+                    just_pressed_mode = "markdown"
+                elif plain_text_just_pressed:
+                    just_pressed_mode = "plain_text"
 
                 if just_pressed_mode is not None:
                     if not recorder.is_recording:
-                        started_at = begin_recording(recorder, app_state, tray, just_pressed_mode)
+                        started_at = begin_recording(
+                            recorder, app_state, tray, just_pressed_mode
+                        )
                         if started_at is not None:
                             record_mode = just_pressed_mode
                             record_start = started_at
@@ -515,8 +523,8 @@ def main() -> None:
                             record_mode = None
                             time.sleep(0.1)
 
-            prev_obsidian_pressed = obsidian_pressed
-            prev_prompt_pressed = prompt_pressed
+            prev_markdown_pressed = markdown_pressed
+            prev_plain_text_pressed = plain_text_pressed
 
             time.sleep(0.02)
 

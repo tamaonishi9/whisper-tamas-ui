@@ -1,13 +1,14 @@
 from copy import deepcopy
+import sys
 import tomllib
 from pathlib import Path
 
 
 DEFAULT_CONFIG = {
     "hotkey": {
-        "obsidian": "alt+q",
-        "prompt": "alt+w",
-        "exit": "esc",
+        "markdown": "alt+q",
+        "plain_text": "alt+w",
+        "exit": "",
     },
     "whisper": {
         "model_size": "small",
@@ -22,7 +23,7 @@ DEFAULT_CONFIG = {
         "min_record_seconds": 0.2,
     },
     "output": {
-        "obsidian_newlines": 1,
+        "markdown_newlines": 1,
     },
     "tray": {
         "enabled": True,
@@ -32,7 +33,7 @@ DEFAULT_CONFIG = {
 
 
 def load_config(path: str = "config.toml") -> dict:
-    config_path = Path(path)
+    config_path = resolve_config_path(path)
 
     if not config_path.exists():
         print("[config] config.toml not found. Using default config.")
@@ -46,6 +47,19 @@ def load_config(path: str = "config.toml") -> dict:
         return deepcopy(DEFAULT_CONFIG)
 
     return merge_config(deepcopy(DEFAULT_CONFIG), user_config)
+
+
+def resolve_config_path(path: str) -> Path:
+    config_path = Path(path)
+    if config_path.is_absolute():
+        return config_path
+
+    if getattr(sys, "frozen", False):
+        base_dir = Path(sys.executable).resolve().parent
+    else:
+        base_dir = Path(__file__).resolve().parent
+
+    return base_dir / config_path
 
 
 def merge_config(default: dict, override: dict) -> dict:

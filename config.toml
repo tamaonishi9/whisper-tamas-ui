@@ -1,6 +1,6 @@
 [hotkey]
-obsidian = "alt+q"
-prompt = "alt+w"
+markdown = "alt+q"
+plain_text = "alt+w"
 exit = ""
 
 [whisper]
@@ -16,7 +16,7 @@ dtype = "float32"
 min_record_seconds = 0.2
 
 [output]
-obsidian_newlines = 1
+markdown_newlines = 1
 
 [tray]
 enabled = true
