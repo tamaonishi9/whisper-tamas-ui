@@ -9,6 +9,8 @@ language = "ja"
 device = "cpu" # "cpu" / "cuda"
 compute_type = "int8" # "int8" / GPUなら "float16" なども候補
 
+num_workers = 1
+
 [audio]
 sample_rate = 16000
 channels = 1

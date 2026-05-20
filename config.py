@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
         "language": "ja",
         "device": "cpu",
         "compute_type": "int8",
+        "num_workers": 1,
     },
     "audio": {
         "sample_rate": 16000,

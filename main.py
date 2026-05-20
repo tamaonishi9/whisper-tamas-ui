@@ -1,15 +1,20 @@
+import faulthandler
+import ctypes
+import os
+from pathlib import Path
 import re
-import time
+import sys
 import threading
-from typing import List
+import time
+import traceback
+from types import ModuleType, SimpleNamespace
+from typing import Any, List
 
 import keyboard
 import numpy as np
 import pyperclip
 import sounddevice as sd
 import winsound
-
-from faster_whisper import WhisperModel
 
 from config import load_config
 
@@ -33,9 +38,102 @@ MODEL_SIZE = config["whisper"]["model_size"]
 LANGUAGE = config["whisper"]["language"]
 DEVICE = config["whisper"]["device"]
 COMPUTE_TYPE = config["whisper"]["compute_type"]
+CPU_THREADS = config["whisper"].get("cpu_threads")
+NUM_WORKERS = config["whisper"]["num_workers"]
 
 MIN_RECORD_SECONDS = config["audio"]["min_record_seconds"]
 MARKDOWN_NEWLINES = config["output"]["markdown_newlines"]
+
+DIAGNOSTIC_LOG_PATH = None
+FAULT_LOG_PATH = None
+_DIAGNOSTIC_STREAM = None
+
+
+def install_faster_whisper_av_stub() -> None:
+    if "av" in sys.modules:
+        return
+
+    av_stub = ModuleType("av")
+
+    class InvalidDataError(Exception):
+        pass
+
+    av_stub.error = SimpleNamespace(InvalidDataError=InvalidDataError)
+    sys.modules["av"] = av_stub
+
+
+def configure_ctranslate2_runtime() -> None:
+    os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
+
+def configure_frozen_dll_directories() -> None:
+    if not getattr(sys, "frozen", False):
+        return
+
+    base_dir = get_app_base_dir()
+    internal_dir = base_dir / "_internal"
+    dll_dirs = [
+        internal_dir / "ctranslate2",
+        internal_dir / "numpy.libs",
+        internal_dir / "onnxruntime" / "capi",
+    ]
+
+    for dll_dir in dll_dirs:
+        if dll_dir.is_dir():
+            os.add_dll_directory(str(dll_dir))
+            log_diagnostic(f"Added DLL directory: {dll_dir}")
+
+    preload_dlls = [
+        internal_dir / "ctranslate2" / "libiomp5md.dll",
+        internal_dir / "ctranslate2" / "ctranslate2.dll",
+    ]
+
+    for dll_path in preload_dlls:
+        if dll_path.is_file():
+            ctypes.WinDLL(str(dll_path))
+            log_diagnostic(f"Preloaded DLL: {dll_path.name}")
+
+
+def get_app_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def log_diagnostic(message: str) -> None:
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    line = f"[{timestamp}] {message}"
+    print(line)
+
+    if _DIAGNOSTIC_STREAM is None:
+        log_diagnostic("Startup aborted: no hotkeys configured")
+        return
+
+    try:
+        _DIAGNOSTIC_STREAM.write(line + "\n")
+        _DIAGNOSTIC_STREAM.flush()
+    except Exception:
+        pass
+
+
+def setup_diagnostics() -> None:
+    global DIAGNOSTIC_LOG_PATH, FAULT_LOG_PATH, _DIAGNOSTIC_STREAM
+
+    if _DIAGNOSTIC_STREAM is not None:
+        return
+
+    base_dir = get_app_base_dir()
+    DIAGNOSTIC_LOG_PATH = base_dir / "startup.log"
+    FAULT_LOG_PATH = base_dir / "fault.log"
+
+    _DIAGNOSTIC_STREAM = open(DIAGNOSTIC_LOG_PATH, "a", encoding="utf-8")
+    fault_stream = open(FAULT_LOG_PATH, "a", encoding="utf-8")
+
+    faulthandler.enable(file=fault_stream, all_threads=True)
+    log_diagnostic(f"Diagnostics enabled: {DIAGNOSTIC_LOG_PATH}")
+    log_diagnostic(f"Fault handler enabled: {FAULT_LOG_PATH}")
+    log_diagnostic(f"Python executable: {sys.executable}")
+    log_diagnostic(f"Frozen: {getattr(sys, 'frozen', False)}")
 
 
 # =========================
@@ -107,7 +205,7 @@ def normalize_text(text: str) -> str:
 # =========================
 # 文字起こし
 # =========================
-def transcribe_audio(model: WhisperModel, audio: np.ndarray) -> str:
+def transcribe_audio(model: Any, audio: np.ndarray) -> str:
     if audio.ndim == 2:
         audio = audio[:, 0]
 
@@ -268,7 +366,7 @@ def begin_recording(
 
 def finish_recording(
     recorder: PushToTalkRecorder,
-    model: WhisperModel,
+    model: Any,
     app_state: AppState,
     tray: TrayController,
     record_mode: str | None,
@@ -357,6 +455,11 @@ def restart_recording(
 # メイン
 # =========================
 def main() -> None:
+    setup_diagnostics()
+    log_diagnostic("Application start")
+    log_diagnostic(
+        f"Config whisper settings: model_size={MODEL_SIZE}, language={LANGUAGE}, device={DEVICE}, compute_type={COMPUTE_TYPE}"
+    )
     if HOTKEY_MARKDOWN is None and HOTKEY_PLAIN_TEXT is None:
         print(
             "設定エラー: Markdown用またはPlain Text用のどちらかのホットキーは必須です"
@@ -364,15 +467,40 @@ def main() -> None:
         return
 
     print("モデルロード中...")
+    log_diagnostic("About to import faster_whisper")
     try:
-        model = WhisperModel(
-            MODEL_SIZE,
-            device=DEVICE,
-            compute_type=COMPUTE_TYPE,
-        )
+        configure_frozen_dll_directories()
+        install_faster_whisper_av_stub()
+        log_diagnostic("Installed av stub for faster_whisper")
+        from faster_whisper import WhisperModel
     except Exception as e:
+        log_diagnostic(f"faster_whisper import failed: {e}")
+        log_diagnostic(traceback.format_exc())
+        print(f"faster_whisper import error: {e}")
+        return
+
+    log_diagnostic("faster_whisper import completed")
+    log_diagnostic("About to create WhisperModel")
+    try:
+        configure_ctranslate2_runtime()
+        log_diagnostic(
+            f"CTranslate2 runtime configured: cpu_threads={CPU_THREADS}, num_workers={NUM_WORKERS}, OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}"
+        )
+        model_kwargs = {
+            "device": DEVICE,
+            "compute_type": COMPUTE_TYPE,
+            "num_workers": NUM_WORKERS,
+        }
+        if CPU_THREADS is not None:
+            model_kwargs["cpu_threads"] = CPU_THREADS
+
+        model = WhisperModel(MODEL_SIZE, **model_kwargs)
+    except Exception as e:
+        log_diagnostic(f"WhisperModel creation failed: {e}")
+        log_diagnostic(traceback.format_exc())
         print(f"モデルロードエラー: {e}")
         return
+    log_diagnostic("WhisperModel creation completed")
     print("モデルロード完了")
 
     recorder = PushToTalkRecorder(
@@ -543,4 +671,10 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        setup_diagnostics()
+        log_diagnostic(f"Unhandled exception: {e}")
+        log_diagnostic(traceback.format_exc())
+        raise

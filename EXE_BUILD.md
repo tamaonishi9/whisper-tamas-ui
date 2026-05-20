@@ -195,6 +195,7 @@ Copy-Item config.toml dist\config.toml -Force
 
 - 仮想環境で `python main.py` が動くか確認
 - 依存が不足していないか確認
+- exe と同じフォルダに出力される `startup.log` と `fault.log` を確認
 
 ---
 
@@ -232,3 +233,38 @@ Copy-Item config.toml dist\config.toml -Force
 ### ライセンス
 
 MIT License
+
+---
+
+## 動作確認済み環境
+
+2026-04-04 時点で、以下の構成で `build.ps1` による EXE ビルドと起動を確認しました。
+
+- OS: Windows 11
+- Python: 3.12.10
+- PyInstaller: 6.19.0
+- ビルド出力先: `dist\whisper-tamas-ui`
+- 起動確認: `startup.log` で `WhisperModel creation completed` まで到達
+- fault.log: 空ファイルを確認
+
+依存バージョン:
+
+- `faster-whisper==1.0.3`
+- `ctranslate2==4.4.0`
+- `av==12.3.0`
+- `requests==2.32.3`
+- `setuptools==80.9.0`
+
+この環境では、以下の調整を入れた状態で動作確認しています。
+
+- `whisper-tamas-ui.spec` は `main.py` をエントリーポイントに使用
+- `upx=False`
+- `build.ps1` は `.venv\Scripts\python.exe -m PyInstaller` を使用
+- frozen 実行時に `_internal\ctranslate2` などの DLL ディレクトリを追加
+- `faster_whisper` import 時は `av` スタブを使用
+- `WhisperModel` 初期化時は `num_workers=1` を指定
+
+補足:
+
+- 上記設定により EXE 起動は安定しましたが、文字起こし速度は以前より遅く感じる可能性があります。
+- 必要に応じて `num_workers` は見直し可能です。

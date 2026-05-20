@@ -3,6 +3,8 @@ from PIL import Image, ImageDraw
 
 from datas import AppState
 
+APP_NAME = "Whisper Tamas"
+
 
 class TrayController:
     def __init__(self, app_state: AppState) -> None:
@@ -99,9 +101,9 @@ class TrayController:
 
     def start(self) -> None:
         self.icon = pystray.Icon(
-            "Whisper Tamas",
+            "whisper_tamas_ui",
             self.create_image(enabled=True),
-            "Whisper Tamas",
+            APP_NAME,
         )
         self.icon.menu = self.build_menu()
         self.icon.title = self.get_status_title()
