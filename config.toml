@@ -8,6 +8,7 @@ model_size = "small"
 language = "ja"
 device = "cpu" # "cpu" / "cuda"
 compute_type = "int8" # "int8" / "float16" for GPU setups
+cpu_threads = 4 # Optional: fixes CPU parallelism explicitly
 num_workers = 1
 
 [audio]

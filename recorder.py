@@ -4,6 +4,11 @@ from typing import List
 import numpy as np
 import sounddevice as sd
 
+from app_logging import get_logger
+
+
+logger = get_logger(__name__)
+
 
 class PushToTalkRecorder:
     def __init__(self, sample_rate: int, channels: int, dtype: str) -> None:
@@ -18,7 +23,7 @@ class PushToTalkRecorder:
 
     def _callback(self, indata, frames, time_info, status) -> None:
         if status:
-            print(f"[Recording warning] {status}")
+            logger.warning("Recording warning: %s", status)
         with self._lock:
             self._frames.append(indata.copy())
 

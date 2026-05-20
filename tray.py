@@ -1,16 +1,19 @@
 ﻿import pystray
 from PIL import Image, ImageDraw
 
+from app_logging import get_logger
 from datas import AppState
 from startup import is_startup_registered, run_startup_script
 
 APP_NAME = "Whisper Tamas"
+logger = get_logger(__name__)
 
 
 class TrayController:
-    def __init__(self, app_state: AppState) -> None:
+    def __init__(self, app_state: AppState, tooltip: str | None = None) -> None:
         self.app_state = app_state
         self.icon: pystray.Icon | None = None
+        self.tooltip = tooltip.strip() if tooltip else APP_NAME
 
     def create_image(self, enabled: bool = True) -> Image.Image:
         bg = "black" if enabled else "gray"
@@ -109,7 +112,7 @@ class TrayController:
             enabled = self.app_state.enabled
 
         self.icon.icon = self.create_image(enabled=enabled)
-        self.icon.title = f"{APP_NAME} | {self.get_status_title()}"
+        self.icon.title = f"{self.tooltip} | {self.get_status_title()}"
         self.icon.menu = self.build_menu()
         self.icon.update_menu()
 
@@ -118,37 +121,40 @@ class TrayController:
             self.app_state.enabled = not self.app_state.enabled
             enabled = self.app_state.enabled
 
-        print("Voice input enabled" if enabled else "Voice input disabled")
+        logger.info("Voice input %s", "enabled" if enabled else "disabled")
         self.refresh()
 
     def register_startup(self, icon: pystray.Icon, item) -> None:
         if run_startup_script("install_startup.ps1"):
-            print("Startup registration completed")
+            logger.info("Startup registration completed")
         else:
-            print("Startup registration failed")
+            logger.warning("Startup registration failed")
         self.refresh()
 
     def unregister_startup(self, icon: pystray.Icon, item) -> None:
         if run_startup_script("uninstall_startup.ps1"):
-            print("Startup unregistration completed")
+            logger.info("Startup unregistration completed")
         else:
-            print("Startup unregistration failed")
+            logger.warning("Startup unregistration failed")
         self.refresh()
 
     def request_exit(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.should_exit = True
-        print("Exit requested from tray")
+        logger.info("Exit requested from tray")
         icon.stop()
 
     def start(self) -> None:
+        with self.app_state.lock:
+            enabled = self.app_state.enabled
+
         self.icon = pystray.Icon(
             "whisper_tamas_ui",
-            self.create_image(enabled=True),
-            APP_NAME,
+            self.create_image(enabled=enabled),
+            self.tooltip,
         )
         self.icon.menu = self.build_menu()
-        self.icon.title = f"{APP_NAME} | {self.get_status_title()}"
+        self.icon.title = f"{self.tooltip} | {self.get_status_title()}"
         self.icon.run()
 
     def stop(self) -> None:
@@ -158,11 +164,11 @@ class TrayController:
     def set_input_mode_p2t(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.input_mode = "p2t"
-        print("Input mode switched to Push2Talk")
+        logger.info("Input mode switched to Push2Talk")
         self.refresh()
 
     def set_input_mode_toggle(self, icon: pystray.Icon, item) -> None:
         with self.app_state.lock:
             self.app_state.input_mode = "toggle"
-        print("Input mode switched to Toggle")
+        logger.info("Input mode switched to Toggle")
         self.refresh()

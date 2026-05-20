@@ -4,11 +4,15 @@ from typing import Any
 import keyboard
 import pyperclip
 
+from app_logging import get_logger
 from audio_feedback import play_done_sound, play_error_sound, play_start_sound
 from datas import AppState
 from recorder import PushToTalkRecorder
 from text_rules import TextRules
 from tray import TrayController
+
+
+logger = get_logger(__name__)
 
 
 class AppController:
@@ -39,15 +43,17 @@ class AppController:
         self.markdown_newlines = markdown_newlines
 
     def run(self) -> None:
-        print("")
-        print("Idle...")
+        logger.info("")
+        logger.info("Idle...")
         if self.hotkey_markdown is not None:
-            print(f"[{self.hotkey_markdown}] Start recording in Markdown mode")
+            logger.info("[%s] Start recording in Markdown mode", self.hotkey_markdown)
         if self.hotkey_plain_text is not None:
-            print(f"[{self.hotkey_plain_text}] Start recording in Plain Text mode")
+            logger.info(
+                "[%s] Start recording in Plain Text mode", self.hotkey_plain_text
+            )
         if self.exit_hotkey is not None:
-            print(f"[{self.exit_hotkey}] Exit")
-        print("")
+            logger.info("[%s] Exit", self.exit_hotkey)
+        logger.info("")
 
         pressed_mode = None
         record_mode = None
@@ -59,13 +65,13 @@ class AppController:
             while True:
                 with self.app_state.lock:
                     if self.app_state.should_exit:
-                        print("Exiting")
+                        logger.info("Exiting")
                         break
                     enabled = self.app_state.enabled
                     input_mode = self.app_state.input_mode
 
                 if self.exit_hotkey is not None and keyboard.is_pressed(self.exit_hotkey):
-                    print("Exiting")
+                    logger.info("Exiting")
                     break
 
                 if self.recorder.is_recording and not enabled:
@@ -77,7 +83,7 @@ class AppController:
                         self.app_state.current_mode = None
 
                     self.tray.refresh()
-                    print("Recording stopped because voice input was disabled")
+                    logger.info("Recording stopped because voice input was disabled")
                     time.sleep(0.05)
                     continue
 
@@ -159,7 +165,7 @@ class AppController:
                 time.sleep(0.02)
 
         except KeyboardInterrupt:
-            print("Exited with Ctrl+C")
+            logger.info("Exited with Ctrl+C")
         finally:
             with self.app_state.lock:
                 self.app_state.should_exit = True
@@ -176,7 +182,7 @@ class AppController:
             play_start_sound()
             self.recorder.start()
         except Exception as error:
-            print(f"Recording start error: {error}")
+            logger.exception("Recording start error: %s", error)
             play_error_sound()
             return None
 
@@ -187,7 +193,7 @@ class AppController:
             self.app_state.current_mode = mode
 
         self.tray.refresh()
-        print("Recording started")
+        logger.info("Recording started")
         return record_start
 
     def finish_recording(self, record_mode: str | None, record_start: float) -> None:
@@ -198,32 +204,32 @@ class AppController:
             self.app_state.is_recording = False
 
         self.tray.refresh()
-        print(f"Recording stopped ({record_seconds:.2f}s)")
+        logger.info("Recording stopped (%.2fs)", record_seconds)
 
         if audio is None:
-            print("No audio was captured")
+            logger.warning("No audio was captured")
             play_error_sound()
             return
 
         if record_seconds < self.min_record_seconds:
-            print("Recording too short, skipping")
+            logger.info("Recording too short, skipping")
             play_error_sound()
             return
 
-        print("Transcribing...")
+        logger.info("Transcribing...")
         started_at = time.time()
 
         try:
             text = self.transcribe_audio(audio)
         except Exception as error:
-            print(f"Transcription error: {error}")
+            logger.exception("Transcription error: %s", error)
             play_error_sound()
             return
 
         elapsed = time.time() - started_at
 
         if not text:
-            print("Transcription result was empty")
+            logger.warning("Transcription result was empty")
             play_error_sound()
             return
 
@@ -234,18 +240,16 @@ class AppController:
             copied = True
             play_done_sound()
         except Exception as error:
-            print(f"Clipboard copy failed: {error}")
+            logger.exception("Clipboard copy failed: %s", error)
             play_error_sound()
             copied = False
 
-        print("")
-        print("--- Result ---")
-        print(text)
-        print("------------")
-        print(f"Transcription time: {elapsed:.2f}s")
+        logger.info("")
+        logger.info("--- Result ---\n%s\n------------", text)
+        logger.info("Transcription time: %.2fs", elapsed)
         if copied:
-            print("Copied to clipboard")
-        print("")
+            logger.info("Copied to clipboard")
+        logger.info("")
 
         with self.app_state.lock:
             self.app_state.current_mode = record_mode
@@ -260,7 +264,7 @@ class AppController:
             self.app_state.current_mode = None
 
         self.tray.refresh()
-        print("Discarding current recording and starting over")
+        logger.info("Discarding current recording and starting over")
         return self.begin_recording(mode)
 
     def transcribe_audio(self, audio) -> str:

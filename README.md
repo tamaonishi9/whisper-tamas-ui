@@ -1,45 +1,9 @@
-# whisper-tamas-ui
+﻿# ローカルで動く高速音声入力ツール（faster-whisperベース）
 
-`faster-whisper` を使った Windows 向けのローカル音声入力ツールです。ホットキーで録音を開始し、音声を文字起こししてクリップボードへコピーします。
+`faster-whisper` を使った Windows 向けのローカル音声入力ツールです。  
+ホットキーで録音を開始し、文字起こし結果をクリップボードへコピーします。
 
-`Markdown` と `Plain Text` の 2 モードを持っていて、トレイメニューから有効/無効や入力方式を切り替えられます。
-
-## 主な機能
-
-- グローバルホットキーで録音開始
-- `Push-to-Talk` と `Toggle` の 2 つの入力モード
-- `faster-whisper` によるローカル文字起こし
-- 結果を自動でクリップボードへコピー
-- Markdown 向けの簡易整形
-- システムトレイから状態確認、無効化、終了が可能
-- 開始・完了・エラー時のビープ音
-
-## 動作概要
-
-このアプリは `main.py` から起動します。音声入力は `sounddevice` で取得し、`WhisperModel` で文字起こしした結果をモード別に整形して `pyperclip` でクリップボードへコピーします。
-
-トレイアイコンは `tray.py` で管理しており、現在の状態に応じて次を切り替えられます。
-
-- アプリの有効/無効
-- 入力モード: `Push2Talk` / `Toggle`
-- アプリ終了
-
-## 必要環境
-
-- Windows
-- Python 3.11 以上
-- マイク入力が利用可能な環境
-
-`winsound` を使っているため、現在の実装は Windows 前提です。
-
-## セットアップ
-
-1. 仮想環境を作成して有効化します。
-2. 依存関係をインストールします。
-3. 必要に応じて `config.toml` を編集します。
-4. `python main.py` で起動します。
-
-例:
+## 最短導入手順
 
 ```powershell
 python -m venv .venv
@@ -48,43 +12,44 @@ pip install -r requirements.txt
 python main.py
 ```
 
+起動後はトレイが常駐します。まず `alt+q` か `alt+w` を押して録音できることを確認してください。
+
+## 主な機能
+
+- Global hotkey で録音開始
+- `Push2Talk` / `Toggle` の 2 つの入力モード
+- `Markdown` / `Plain Text` の 2 つの出力モード
+- システムトレイからの有効化 / 無効化
+- システムトレイからのスタートアップ登録 / 解除
+- `config.toml` でホットキーやテキストルールを調整可能
+
+## 必要環境
+
+- Windows
+- Python 3.11 以上
+- 動作するマイク入力デバイス
+
+## セットアップ
+
+最短導入手順と同じです。初回はマイク入力が正しく取れるか、通常の `python main.py` 実行で確認するのがおすすめです。
+
 ## 使い方
 
-デフォルト設定では次のホットキーが使われます。
+デフォルト設定では以下のホットキーを使用します。
 
-- `alt+q`: Markdown モードで録音
-- `alt+w`: Plain Text モードで録音
-- `esc`: 終了
+- `alt+q`: Markdown mode で録音
+- `alt+w`: Plain Text mode で録音
+- `exit = ""`: 終了ホットキーは無効
 
-初期状態の入力モードは `Push-to-Talk` です。
+入力モードはトレイメニューから切り替えます。
 
-- `Push-to-Talk`: ホットキーを押している間だけ録音します
-- `Toggle`: ホットキーを 1 回押して録音開始、同じホットキーでもう 1 回押して録音終了します
-
-`Toggle` モードで録音中に別モードのホットキーを押すと、現在の録音を破棄して新しいモードで録音をやり直します。
-
-## 出力ルール
-
-### Markdown モード
-
-Markdown モードでは、文字起こし結果に対して次の整形を行います。
-
-- 先頭のフィラー語を除去します
-  - 対象例: `えーと`, `えっと`, `あの` など
-- `タイトル: ...` または `title: ...` で始まる場合は `# 見出し` に変換します
-- `見出し: ...` または `heading: ...` で始まる場合は `## 見出し` に変換します
-- それ以外は `- ` を付けて箇条書きにします
-- 末尾に `markdown_newlines` で指定した数の改行を追加します
-
-### Plain Text モード
-
-- 文字起こし結果をそのままクリップボードへコピーします
+- `Push2Talk`: ホットキーを押している間だけ録音
+- `Toggle`: 1 回押して録音開始、もう 1 回押して録音終了
 
 ## 設定
 
-設定は `config.toml` で上書きできます。ファイルが存在しない場合や読み込みに失敗した場合は、`config.py` のデフォルト設定が使われます。
-
-現在のデフォルト設定:
+設定は `config.toml` で変更できます。  
+アプリ側の UI やログは英語ベースですが、普段使うテキスト整形ルールは日本語で設定できます。
 
 ```toml
 [hotkey]
@@ -97,6 +62,8 @@ model_size = "small"
 language = "ja"
 device = "cpu"
 compute_type = "int8"
+cpu_threads = 4
+num_workers = 1
 
 [audio]
 sample_rate = 16000
@@ -107,35 +74,59 @@ min_record_seconds = 0.2
 [output]
 markdown_newlines = 1
 
+[text_rules]
+filler_phrases = ["えーと、", "えーと", "えっと、", "えっと", "あの、", "あの"]
+markdown_title_patterns = ["タイトル", "title"]
+markdown_heading_patterns = ["見出し", "heading"]
+
 [tray]
 enabled = true
 tooltip = "whisper-tamas-ui"
 ```
 
-各セクションの意味:
+### 設定項目一覧
 
-- `[hotkey]`: モード別の録音開始キーと終了キー
-- `[whisper]`: モデルサイズ、言語、実行デバイス、計算精度
-- `[audio]`: 録音時のサンプルレート、チャンネル数、dtype、最小録音秒数
-- `[output]`: Markdown モードの出力改行数
-- `[tray]`: トレイ関連の設定値
+| 項目                       | 説明                                | 目安                                   |
+| -------------------------- | ----------------------------------- | -------------------------------------- |
+| `hotkey.markdown`          | Markdown モード録音開始ホットキー   | 例: `alt+q`                            |
+| `hotkey.plain_text`        | Plain Text モード録音開始ホットキー | 例: `alt+w`                            |
+| `hotkey.exit`              | 終了ホットキー。空文字なら無効      | 通常は `""`                            |
+| `whisper.model_size`       | 読み込む Whisper モデルサイズ       | 精度重視なら大きめ、軽さ重視なら小さめ |
+| `whisper.language`         | 文字起こし言語                      | 日本語なら `ja`                        |
+| `whisper.device`           | 推論デバイス                        | CPU は `cpu`、GPU は `cuda`            |
+| `whisper.compute_type`     | 推論時の計算精度                    | CPU は `int8` が扱いやすい             |
+| `whisper.cpu_threads`      | CPU 推論に使うスレッド数            | CPU 使用率を調整したいときに指定       |
+| `whisper.num_workers`      | WhisperModel の worker 数           | CPU ではまず `1` から確認がおすすめ    |
+| `audio.sample_rate`        | 録音サンプルレート                  | 通常は `16000`                         |
+| `audio.channels`           | 録音チャンネル数                    | 通常は `1`                             |
+| `audio.dtype`              | 音声バッファ型                      | 通常は `float32`                       |
+| `audio.min_record_seconds` | この秒数未満の録音を破棄            | 誤爆防止なら `0.2` 前後                |
+| `output.markdown_newlines` | Markdown 結果の末尾改行数           | 貼り付け先に応じて調整                 |
+| `tray.enabled`             | 起動時の音声入力有効状態            | 一時停止したいなら `false`             |
+| `tray.tooltip`             | トレイのツールチップ表示名          | 配布名に合わせて調整                   |
 
-補足:
+### `text_rules`
 
-- `hotkey.markdown` または `hotkey.plain_text` のどちらか 1 つは必須です
-- 空文字列または `"none"` を設定したホットキーは無効になります
-- `min_record_seconds` 未満の短い録音は文字起こしせず破棄されます
-- `[tray]` セクションの値は現状の実装では参照されていません
+- `filler_phrases`: 先頭に来たら削除するフィラー語
+- `markdown_title_patterns`: `# ...` に変換する接頭辞
+- `markdown_heading_patterns`: `## ...` に変換する接頭辞
 
 ## ファイル構成
 
-- `main.py`: 録音、文字起こし、ホットキー監視、出力処理の本体
+- `main.py`: 起動処理とアプリ組み立て
+- `app_controller.py`: メインループと録音フロー
+- `recorder.py`: 録音処理
+- `audio_feedback.py`: 効果音
+- `text_rules.py`: フィラー除去と Markdown 整形
 - `tray.py`: システムトレイ UI
-- `config.py`: デフォルト設定と `config.toml` のマージ処理
-- `config.toml`: ユーザー設定
-- `datas.py`: アプリ状態の共有データ
-- `build.ps1`: `config.toml` を含めて EXE をビルドする PowerShell スクリプト
-- `EXE_BUILD.md`: EXE 化の手順書
+- `startup.py`: スタートアップ登録 / 解除支援
+- `build.ps1`: EXE ビルドスクリプト
+- `EXE_BUILD.md`: EXE 化手順
+
+## 配布とビルド
+
+`README.md` は利用者向けの使い方を扱います。  
+EXE の作成方法や `dist\` の扱いは [EXE_BUILD.md](EXE_BUILD.md) に分けています。
 
 ## ライセンス
 

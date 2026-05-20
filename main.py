@@ -1,12 +1,11 @@
 ﻿import ctypes
-import faulthandler
 import os
 from pathlib import Path
 import sys
 import threading
-import traceback
 from types import ModuleType, SimpleNamespace
 
+from app_logging import get_logger, setup_logging
 from app_controller import AppController
 from config import load_config
 from datas import AppState
@@ -15,29 +14,7 @@ from text_rules import TextRules
 from tray import TrayController
 
 
-config = load_config()
-
-HOTKEY_MARKDOWN_RAW = config["hotkey"]["markdown"]
-HOTKEY_PLAIN_TEXT_RAW = config["hotkey"]["plain_text"]
-EXIT_HOTKEY_RAW = config["hotkey"]["exit"]
-
-SAMPLE_RATE = config["audio"]["sample_rate"]
-CHANNELS = config["audio"]["channels"]
-DTYPE = config["audio"]["dtype"]
-MIN_RECORD_SECONDS = config["audio"]["min_record_seconds"]
-
-MODEL_SIZE = config["whisper"]["model_size"]
-LANGUAGE = config["whisper"]["language"]
-DEVICE = config["whisper"]["device"]
-COMPUTE_TYPE = config["whisper"]["compute_type"]
-CPU_THREADS = config["whisper"].get("cpu_threads")
-NUM_WORKERS = config["whisper"]["num_workers"]
-
-MARKDOWN_NEWLINES = config["output"]["markdown_newlines"]
-
-DIAGNOSTIC_LOG_PATH = None
-FAULT_LOG_PATH = None
-_DIAGNOSTIC_STREAM = None
+logger = get_logger(__name__)
 
 
 def install_faster_whisper_av_stub() -> None:
@@ -78,7 +55,7 @@ def configure_frozen_dll_directories() -> None:
     for dll_dir in dll_dirs:
         if dll_dir.is_dir():
             os.add_dll_directory(str(dll_dir))
-            log_diagnostic(f"Added DLL directory: {dll_dir}")
+            logger.info("Added DLL directory: %s", dll_dir)
 
     preload_dlls = [
         internal_dir / "ctranslate2" / "libiomp5md.dll",
@@ -88,46 +65,7 @@ def configure_frozen_dll_directories() -> None:
     for dll_path in preload_dlls:
         if dll_path.is_file():
             ctypes.WinDLL(str(dll_path))
-            log_diagnostic(f"Preloaded DLL: {dll_path.name}")
-
-
-def log_diagnostic(message: str) -> None:
-    global _DIAGNOSTIC_STREAM
-
-    import time
-
-    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
-    line = f"[{timestamp}] {message}"
-    print(line)
-
-    if _DIAGNOSTIC_STREAM is None:
-        return
-
-    try:
-        _DIAGNOSTIC_STREAM.write(line + "\n")
-        _DIAGNOSTIC_STREAM.flush()
-    except Exception:
-        pass
-
-
-def setup_diagnostics() -> None:
-    global DIAGNOSTIC_LOG_PATH, FAULT_LOG_PATH, _DIAGNOSTIC_STREAM
-
-    if _DIAGNOSTIC_STREAM is not None:
-        return
-
-    base_dir = get_app_base_dir()
-    DIAGNOSTIC_LOG_PATH = base_dir / "startup.log"
-    FAULT_LOG_PATH = base_dir / "fault.log"
-
-    _DIAGNOSTIC_STREAM = open(DIAGNOSTIC_LOG_PATH, "a", encoding="utf-8")
-    fault_stream = open(FAULT_LOG_PATH, "a", encoding="utf-8")
-
-    faulthandler.enable(file=fault_stream, all_threads=True)
-    log_diagnostic(f"Diagnostics enabled: {DIAGNOSTIC_LOG_PATH}")
-    log_diagnostic(f"Fault handler enabled: {FAULT_LOG_PATH}")
-    log_diagnostic(f"Python executable: {sys.executable}")
-    log_diagnostic(f"Frozen: {getattr(sys, 'frozen', False)}")
+            logger.info("Preloaded DLL: %s", dll_path.name)
 
 
 def normalize_optional_hotkey(value: str | None) -> str | None:
@@ -140,78 +78,107 @@ def normalize_optional_hotkey(value: str | None) -> str | None:
     return normalized
 
 
-def create_model():
-    log_diagnostic("About to import faster_whisper")
+def create_model(
+    model_size: str,
+    device: str,
+    compute_type: str,
+    cpu_threads: int | None,
+    num_workers: int,
+):
+    logger.info("About to import faster_whisper")
     try:
         configure_frozen_dll_directories()
         install_faster_whisper_av_stub()
-        log_diagnostic("Installed av stub for faster_whisper")
+        logger.info("Installed av stub for faster_whisper")
         from faster_whisper import WhisperModel
     except Exception as error:
-        log_diagnostic(f"faster_whisper import failed: {error}")
-        log_diagnostic(traceback.format_exc())
-        print(f"faster_whisper import error: {error}")
+        logger.exception("faster_whisper import failed: %s", error)
         return None
 
-    log_diagnostic("faster_whisper import completed")
-    log_diagnostic("About to create WhisperModel")
+    logger.info("faster_whisper import completed")
+    logger.info("About to create WhisperModel")
 
     try:
         configure_ctranslate2_runtime()
-        log_diagnostic(
-            f"CTranslate2 runtime configured: cpu_threads={CPU_THREADS}, num_workers={NUM_WORKERS}, OMP_NUM_THREADS={os.environ.get('OMP_NUM_THREADS')}"
+        logger.info(
+            "CTranslate2 runtime configured: cpu_threads=%s, num_workers=%s, OMP_NUM_THREADS=%s",
+            cpu_threads,
+            num_workers,
+            os.environ.get("OMP_NUM_THREADS"),
         )
 
         model_kwargs = {
-            "device": DEVICE,
-            "compute_type": COMPUTE_TYPE,
-            "num_workers": NUM_WORKERS,
+            "device": device,
+            "compute_type": compute_type,
+            "num_workers": num_workers,
         }
-        if CPU_THREADS is not None:
-            model_kwargs["cpu_threads"] = CPU_THREADS
+        if cpu_threads is not None:
+            model_kwargs["cpu_threads"] = cpu_threads
 
-        model = WhisperModel(MODEL_SIZE, **model_kwargs)
+        model = WhisperModel(model_size, **model_kwargs)
     except Exception as error:
-        log_diagnostic(f"WhisperModel creation failed: {error}")
-        log_diagnostic(traceback.format_exc())
-        print(f"Model load error: {error}")
+        logger.exception("WhisperModel creation failed: %s", error)
         return None
 
-    log_diagnostic("WhisperModel creation completed")
+    logger.info("WhisperModel creation completed")
     return model
 
 
 def main() -> None:
-    setup_diagnostics()
-    log_diagnostic("Application start")
-    log_diagnostic(
-        f"Config whisper settings: model_size={MODEL_SIZE}, language={LANGUAGE}, device={DEVICE}, compute_type={COMPUTE_TYPE}"
+    setup_logging(get_app_base_dir())
+    config = load_config()
+    logger.info("Application start")
+
+    hotkey_markdown = normalize_optional_hotkey(config["hotkey"]["markdown"])
+    hotkey_plain_text = normalize_optional_hotkey(config["hotkey"]["plain_text"])
+    exit_hotkey = normalize_optional_hotkey(config["hotkey"]["exit"])
+
+    sample_rate = config["audio"]["sample_rate"]
+    channels = config["audio"]["channels"]
+    dtype = config["audio"]["dtype"]
+    min_record_seconds = config["audio"]["min_record_seconds"]
+
+    model_size = config["whisper"]["model_size"]
+    language = config["whisper"]["language"]
+    device = config["whisper"]["device"]
+    compute_type = config["whisper"]["compute_type"]
+    cpu_threads = config["whisper"].get("cpu_threads")
+    num_workers = config["whisper"]["num_workers"]
+
+    markdown_newlines = config["output"]["markdown_newlines"]
+    tray_enabled = config["tray"]["enabled"]
+    tray_tooltip = config["tray"]["tooltip"]
+
+    logger.info(
+        "Config whisper settings: model_size=%s, language=%s, device=%s, compute_type=%s, cpu_threads=%s, num_workers=%s",
+        model_size,
+        language,
+        device,
+        compute_type,
+        cpu_threads,
+        num_workers,
     )
 
-    hotkey_markdown = normalize_optional_hotkey(HOTKEY_MARKDOWN_RAW)
-    hotkey_plain_text = normalize_optional_hotkey(HOTKEY_PLAIN_TEXT_RAW)
-    exit_hotkey = normalize_optional_hotkey(EXIT_HOTKEY_RAW)
-
     if hotkey_markdown is None and hotkey_plain_text is None:
-        print(
+        logger.error(
             "Configuration error: either the Markdown or Plain Text hotkey must be configured"
         )
         return
 
-    print("Loading model...")
-    model = create_model()
+    logger.info("Loading model...")
+    model = create_model(model_size, device, compute_type, cpu_threads, num_workers)
     if model is None:
         return
-    print("Model loaded")
+    logger.info("Model loaded")
 
     text_rules = TextRules.from_config(config)
     recorder = PushToTalkRecorder(
-        sample_rate=SAMPLE_RATE,
-        channels=CHANNELS,
-        dtype=DTYPE,
+        sample_rate=sample_rate,
+        channels=channels,
+        dtype=dtype,
     )
-    app_state = AppState()
-    tray = TrayController(app_state)
+    app_state = AppState(enabled=tray_enabled)
+    tray = TrayController(app_state, tooltip=tray_tooltip)
 
     tray_thread = threading.Thread(target=tray.start, daemon=True)
     tray_thread.start()
@@ -225,9 +192,9 @@ def main() -> None:
         hotkey_markdown=hotkey_markdown,
         hotkey_plain_text=hotkey_plain_text,
         exit_hotkey=exit_hotkey,
-        language=LANGUAGE,
-        min_record_seconds=MIN_RECORD_SECONDS,
-        markdown_newlines=MARKDOWN_NEWLINES,
+        language=language,
+        min_record_seconds=min_record_seconds,
+        markdown_newlines=markdown_newlines,
     )
     controller.run()
 
@@ -236,7 +203,6 @@ if __name__ == "__main__":
     try:
         main()
     except Exception as error:
-        setup_diagnostics()
-        log_diagnostic(f"Unhandled exception: {error}")
-        log_diagnostic(traceback.format_exc())
+        setup_logging(get_app_base_dir())
+        logger.exception("Unhandled exception: %s", error)
         raise

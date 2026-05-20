@@ -1,270 +1,130 @@
-# whisper-tamas-ui - EXEビルド手順
+﻿# whisper-tamas-ui - EXE ビルド手順
 
----
+## 概要
 
-## EXE化手順
+このプロジェクトは `build.ps1` を使って `WhisperTamas.exe` を生成します。  
+ビルド後の成果物は `dist\WhisperTamas\` に出力されます。  
+このドキュメントはメンテナンス向けのビルド手順を扱います。通常利用者向けの導入や使い方は `README.md` にまとめます。
 
-`whisper-tamas-ui` を **exe形式で実行できるようにする手順**です。
-Python環境なしでの起動や、スタートアップ登録・常駐運用を目的としています。
+## 責務の分離
 
----
+- `README.md`: 利用者向けの最短導入手順、基本的な使い方、設定の意味
+- `EXE_BUILD.md`: 開発者 / 公開担当向けのビルド方法、成果物確認、配布前チェック
+- `dist\`: ローカルで生成されるビルド成果物。公開用リリースそのものではなく、配布前の確認対象
 
-### 概要
-
-このプロジェクトは通常、以下で起動します。
-
-```bash
-python main.py
-```
-
-本ガイドではこれを **`.exe` に変換**し、以下を実現します。
-
-- Python不要で起動
-- トレイ常駐アプリとして運用
-- スタートアップ登録が可能
-- アプリ名で表示（Python表示回避）
-
----
-
-### 前提環境
+## 前提
 
 - Windows
 - Python 3.11 以上
-- 仮想環境（推奨）
+- 仮想環境 `.venv` を作成済み
 
----
-
-### セットアップ
-
-#### 1. 仮想環境の作成（未作成の場合）
-
-```bash
-python -m venv .venv
-```
-
-#### 2. 仮想環境の有効化
-
-PowerShell:
+## 初回セットアップ
 
 ```powershell
+python -m venv .venv
 .venv\Scripts\Activate.ps1
-```
-
-cmd:
-
-```cmd
-.venv\Scripts\activate.bat
-```
-
----
-
-#### 3. 依存パッケージのインストール
-
-```bash
 pip install -r requirements.txt
-```
-
-追加で PyInstaller をインストールします。
-
-```bash
 pip install pyinstaller
 ```
 
-このリポジトリには EXE ビルド用の `build.ps1` も含まれています。
-以降はこのスクリプトを使うと、`config.toml` を exe の横へコピーするところまでまとめて実行できます。
+## 動作確認
 
----
+EXE 化の前に、まず通常実行で確認します。
 
-### 動作確認（重要）
-
-exe化の前に、必ず通常実行で動作確認してください。
-
-```bash
+```powershell
 python main.py
 ```
 
-確認項目:
+確認ポイント:
 
-- トレイ常駐する
-- `alt+q` → Markdown モード録音
-- `alt+w` → Plain Text モード録音
-- `exit = ""` のままなら終了ホットキーは無効
-- `config.toml` が反映される
-- 音声認識が動く
+- モデルロードが成功する
+- トレイメニューが表示される
+- `alt+q` / `alt+w` が動作する
+- `config.toml` の変更が反映される
 
----
-
-### EXEビルド
-
-#### 推奨手順
+## ビルド
 
 ```powershell
 .\build.ps1
 ```
 
-`build.ps1` は内部で次のコマンドを実行します。
+このスクリプトは以下を行います。
 
-```powershell
-pyinstaller main.py --name whisper-tamas-ui --onedir
-Copy-Item config.toml dist\whisper-tamas-ui\config.toml -Force
-```
+- `whisper-tamas-ui.spec` を使って PyInstaller を実行
+- `dist\WhisperTamas\WhisperTamas.exe` を生成
+- `config.toml` を成果物フォルダへコピー
+- `install_startup.ps1` / `uninstall_startup.ps1` を成果物フォルダへコピー
 
-この手順により、`config.toml` も自動で `dist\whisper-tamas-ui\` に配置されます。
-
----
-
-### ビルド結果
+## 出力構成
 
 ```text
 dist/
-└─ whisper-tamas-ui/
-   ├─ whisper-tamas-ui.exe
-   ├─ ...
-```
-
----
-
-### 設定ファイル配置
-
-`build.ps1` を使う場合、`config.toml` は自動で exe と同じフォルダに配置されます。
-
-現在の実装では、`config.toml` は実行ファイルの配置ディレクトリを基準に読み込まれます。
-そのため、ショートカットやスタートアップから起動しても、exe の横に置いた `config.toml` が参照されます。
-
-```text
-dist/
-└─ whisper-tamas-ui/
-   ├─ whisper-tamas-ui.exe
+└─ WhisperTamas/
+   ├─ WhisperTamas.exe
    ├─ config.toml
+   ├─ install_startup.ps1
+   ├─ uninstall_startup.ps1
+   └─ _internal/
 ```
 
----
-
-### 実行方法
-
-```bash
-dist\whisper-tamas-ui\whisper-tamas-ui.exe
-```
-
----
-
-### 動作確認
-
-#### 起動確認
-
-- exeが起動する
-- エラーで即終了しない
-- モデルロードが成功する
-
-#### 機能確認
-
-- トレイに常駐する
-- ホットキーが動作する
-- 録音→文字起こし→クリップボードが動く
-
----
-
-### ビルドオプション（後で調整）
-
-#### コンソール非表示
-
-安定後に以下を使用:
+## 実行
 
 ```powershell
-pyinstaller main.py --name whisper-tamas-ui --onedir --noconsole
-Copy-Item config.toml dist\whisper-tamas-ui\config.toml -Force
+dist\WhisperTamas\WhisperTamas.exe
 ```
 
----
+## 配布時の考え方
 
-#### onefile化（上級者向け）
+`dist\WhisperTamas\` はビルド直後の作業ディレクトリです。公開時はそのまま `dist` フォルダを案内するのではなく、次の単位で責務を切り分けると分かりやすくなります。
+
+- 利用者には `README.md` を読めば導入と設定が分かる状態にする
+- 公開担当は `dist\WhisperTamas\` の中身を確認してから zip 化やリリース登録を行う
+- リリースノートでは `dist` という内部用語より `WhisperTamas.zip` のような配布物名を前面に出す
+
+配布前の最低確認:
+
+- `WhisperTamas.exe` が起動する
+- `config.toml` を編集すると挙動が変わる
+- `startup.log` と `fault.log` が出力される
+- `install_startup.ps1` / `uninstall_startup.ps1` が同梱されている
+
+## スタートアップ登録
+
+配布成果物には以下のスクリプトが含まれます。
+
+- `install_startup.ps1`
+- `uninstall_startup.ps1`
+
+通常はトレイメニューから次の操作を使う想定です。
+
+- `Register Startup`
+- `Unregister Startup`
+
+## トラブルシューティング
+
+### ビルド時に `Access is denied` が出る
+
+旧バージョンの exe や実行中のプロセスがファイルをロックしている可能性があります。
+
+- 実行中の `WhisperTamas.exe` を終了する
+- 古い `dist\whisper-tamas-ui\` を使っていないか確認する
+- 必要なら Windows を再起動してから再ビルドする
+
+### トレイメニューの変更が反映されない
+
+古い成果物ではなく、必ず新しい exe を起動してください。
 
 ```powershell
-pyinstaller main.py --name whisper-tamas-ui --onefile
-Copy-Item config.toml dist\config.toml -Force
+dist\WhisperTamas\WhisperTamas.exe
 ```
 
-※ faster-whisper の都合で問題が出る場合あり
-まずは `onedir` を推奨
+### `config.toml` の変更が反映されない
 
----
+`config.toml` は exe と同じフォルダに置いてください。  
+`_internal` の中には置かないでください。
 
-### トラブルシューティング
+## 補足
 
-#### 起動しない
-
-- 仮想環境で `python main.py` が動くか確認
-- 依存が不足していないか確認
-- exe と同じフォルダに出力される `startup.log` と `fault.log` を確認
-
----
-
-#### config.toml が読まれない
-
-- `build.ps1` 実行後に `dist\whisper-tamas-ui\config.toml` が生成されているか確認
-- `whisper-tamas-ui.exe` と同じディレクトリにあるか確認
-- `_internal` の中ではなく、exe の横に置かれているか確認
-
----
-
-#### モデルロード失敗
-
-- 初回ダウンロードが必要な場合あり
-- ネットワーク状態を確認
-
----
-
-#### トレイが出ない
-
-- バックグラウンドで落ちていないか確認
-- consoleありビルドでログを見る
-
----
-
-### 次のステップ
-
-- スタートアップ登録（Phase6-2）
-- UX改善（Phase6-3）
-- 誤認識辞書の導入
-- GPU対応検証
-
----
-
-### ライセンス
-
-MIT License
-
----
-
-## 動作確認済み環境
-
-2026-04-04 時点で、以下の構成で `build.ps1` による EXE ビルドと起動を確認しました。
-
-- OS: Windows 11
-- Python: 3.12.10
-- PyInstaller: 6.19.0
-- ビルド出力先: `dist\whisper-tamas-ui`
-- 起動確認: `startup.log` で `WhisperModel creation completed` まで到達
-- fault.log: 空ファイルを確認
-
-依存バージョン:
-
-- `faster-whisper==1.0.3`
-- `ctranslate2==4.4.0`
-- `av==12.3.0`
-- `requests==2.32.3`
-- `setuptools==80.9.0`
-
-この環境では、以下の調整を入れた状態で動作確認しています。
-
-- `whisper-tamas-ui.spec` は `main.py` をエントリーポイントに使用
-- `upx=False`
-- `build.ps1` は `.venv\Scripts\python.exe -m PyInstaller` を使用
-- frozen 実行時に `_internal\ctranslate2` などの DLL ディレクトリを追加
-- `faster_whisper` import 時は `av` スタブを使用
-- `WhisperModel` 初期化時は `num_workers=1` を指定
-
-補足:
-
-- 上記設定により EXE 起動は安定しましたが、文字起こし速度は以前より遅く感じる可能性があります。
-- 必要に応じて `num_workers` は見直し可能です。
+- GUI アプリとしてビルドされるため、コンソールは表示されません
+- 実行時ログは `startup.log` と `fault.log` に出力されます
+- `text_rules` でフィラー語や見出し判定を調整できます

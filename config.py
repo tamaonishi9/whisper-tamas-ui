@@ -3,6 +3,11 @@ import sys
 import tomllib
 from pathlib import Path
 
+from app_logging import get_logger
+
+
+logger = get_logger(__name__)
+
 
 DEFAULT_CONFIG = {
     "hotkey": {
@@ -15,6 +20,7 @@ DEFAULT_CONFIG = {
         "language": "ja",
         "device": "cpu",
         "compute_type": "int8",
+        "cpu_threads": None,
         "num_workers": 1,
     },
     "audio": {
@@ -55,14 +61,14 @@ def load_config(path: str = "config.toml") -> dict:
     config_path = resolve_config_path(path)
 
     if not config_path.exists():
-        print("[config] config.toml not found. Using default config.")
+        logger.warning("config.toml not found. Using default config.")
         return deepcopy(DEFAULT_CONFIG)
 
     try:
         config_text = config_path.read_text(encoding="utf-8-sig")
         user_config = tomllib.loads(config_text)
     except Exception as e:
-        print(f"[config] load error: {e}")
+        logger.exception("Failed to load config.toml: %s", e)
         return deepcopy(DEFAULT_CONFIG)
 
     return merge_config(deepcopy(DEFAULT_CONFIG), user_config)
