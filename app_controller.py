@@ -1,3 +1,6 @@
+import queue
+import sys
+import threading
 import time
 from typing import Any
 
@@ -29,6 +32,7 @@ class AppController:
         language: str,
         min_record_seconds: float,
         markdown_newlines: int,
+        llm_client: Any = None,
     ) -> None:
         self.recorder = recorder
         self.model = model
@@ -41,6 +45,25 @@ class AppController:
         self.language = language
         self.min_record_seconds = min_record_seconds
         self.markdown_newlines = markdown_newlines
+        self.llm_client = llm_client
+
+        # 単一ワーカーで直列処理するキューとスレッドを起動
+        self._queue: queue.Queue = queue.Queue()
+        self._worker_thread = threading.Thread(target=self._worker, daemon=True)
+        self._worker_thread.start()
+
+    # キューから録音データを取り出して順番に処理するワーカー
+    def _worker(self) -> None:
+        while True:
+            item = self._queue.get()
+            # Noneは終了シグナル
+            if item is None:
+                break
+            audio, record_mode = item
+            try:
+                self._process_recording(audio, record_mode)
+            except Exception as error:
+                logger.exception("Unexpected worker error: %s", error)
 
     # キー入力を監視して録音の開始・停止を制御するメインループ
     def run(self) -> None:
@@ -175,6 +198,10 @@ class AppController:
         except KeyboardInterrupt:
             logger.info("Exited with Ctrl+C")
         finally:
+            # ワーカーへ終了シグナルを送信し、処理中タスクの完了を待つ
+            self._queue.put(None)
+            self._worker_thread.join(timeout=30.0)
+
             # 終了処理: AppState更新・ストリーム停止・トレイ停止
             with self.app_state.lock:
                 self.app_state.should_exit = True
@@ -206,7 +233,7 @@ class AppController:
         logger.info("Recording started")
         return record_start
 
-    # 録音停止→文字起こし→テキスト整形→クリップボードコピー
+    # 録音停止・最低時間チェックをメインスレッドで実行し、重い処理をキューへ投入
     def finish_recording(self, record_mode: str | None, record_start: float) -> None:
         audio = self.recorder.stop()
         record_seconds = time.time() - record_start
@@ -227,11 +254,16 @@ class AppController:
             play_error_sound()
             return
 
+        # Whisper文字起こしとLLM後処理はバックグラウンドワーカーへ投入
+        self._queue.put((audio, record_mode))
+
+    # 文字起こし→前処理→LLM後処理→整形→クリップボード出力
+    def _process_recording(self, audio, record_mode: str | None) -> None:
         logger.info("Transcribing...")
         started_at = time.time()
 
         try:
-            text = self.transcribe_audio(audio)
+            raw_text = self.transcribe_audio(audio)
         except Exception as error:
             logger.exception("Transcription error: %s", error)
             play_error_sound()
@@ -239,11 +271,28 @@ class AppController:
 
         elapsed = time.time() - started_at
 
-        if not text:
+        if not raw_text:
             logger.warning("Transcription result was empty")
             play_error_sound()
             return
 
+        # LLM前処理: filler除去（全モード共通、LLM有効時のノイズ抑制も兼ねる）
+        text = self.text_rules.strip_filler(raw_text)
+
+        # 直接実行時のみLLM前テキストをデバッグ出力（frozen実行では非表示）
+        if not getattr(sys, "frozen", False):
+            logger.info("--- Before LLM ---\n%s\n-----------------", text)
+
+        # LLM後処理（enabled=trueかつmodel設定済みの場合のみ）
+        if self.llm_client is not None:
+            logger.info("Running LLM post-processing...")
+            llm_result = self.llm_client.process(text)
+            if llm_result is not None:
+                text = llm_result
+            else:
+                logger.info("LLM post-processing failed, using Whisper result")
+
+        # 出力モード別整形とクリップボード出力
         try:
             text = self.text_rules.format_text_by_mode(text, record_mode)
             text = self.add_output_spacing(text, record_mode)
@@ -264,8 +313,7 @@ class AppController:
 
         with self.app_state.lock:
             self.app_state.current_mode = record_mode
-
-        self.tray.refresh()
+        # バックグラウンドワーカーからtray.refresh()は呼ばない（pystrayスレッド安全性のため）
 
     # 現在の録音を破棄して別モードで録音を再開
     def restart_recording(self, mode: str) -> float | None:

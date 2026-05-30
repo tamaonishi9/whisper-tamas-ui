@@ -1,4 +1,4 @@
-﻿# ローカルで動く高速音声入力ツール（faster-whisperベース）
+# ローカルで動く高速音声入力ツール（faster-whisperベース）
 
 `faster-whisper` を使った Windows 向けのローカル音声入力ツールです。  
 ホットキーで録音を開始し、文字起こし結果をクリップボードへコピーします。
@@ -22,6 +22,7 @@ python main.py
 - システムトレイからの有効化 / 無効化
 - システムトレイからのスタートアップ登録 / 解除
 - `config.toml` でホットキーやテキストルールを調整可能
+- OpenAI 互換 API（ローカル LLM・クラウド LLM）による文字起こし後処理（オプション）
 
 ## 必要環境
 
@@ -46,7 +47,9 @@ python main.py
 - `Push2Talk`: ホットキーを押している間だけ録音
 - `Toggle`: 1 回押して録音開始、もう 1 回押して録音終了
 
-## 設定
+```powershell
+Copy-Item config.toml.example config.toml
+```
 
 設定は `config.toml` で変更できます。  
 アプリ側の UI やログは英語ベースですが、普段使うテキスト整形ルールは日本語で設定できます。
@@ -82,6 +85,15 @@ markdown_heading_patterns = ["見出し", "heading"]
 [tray]
 enabled = true
 tooltip = "whisper-tamas-ui"
+
+[llm]
+enabled = false
+base_url = "http://127.0.0.1:1234/v1"
+api_key = ""
+model = "your-model-name"
+timeout_seconds = 10.0
+prompt = "文字起こし結果の意味を変えず、誤字、固有名詞、表記ゆれのみを修正してください。説明を追加せず、修正後の本文だけを返してください。"
+glossary = []
 ```
 
 ### 設定項目一覧
@@ -104,12 +116,43 @@ tooltip = "whisper-tamas-ui"
 | `output.markdown_newlines` | Markdown 結果の末尾改行数           | 貼り付け先に応じて調整                 |
 | `tray.enabled`             | 起動時の音声入力有効状態            | 一時停止したいなら `false`             |
 | `tray.tooltip`             | トレイのツールチップ表示名          | 配布名に合わせて調整                   |
+| `llm.enabled`              | LLM 後処理の有効 / 無効             | 使用しない場合は `false`               |
+| `llm.base_url`             | OpenAI 互換 API のベース URL        | LM Studio: `http://127.0.0.1:1234/v1`  |
+| `llm.api_key`              | API キー                            | ローカル API では空文字で可            |
+| `llm.model`                | 使用するモデル名                    | 接続先に合わせて指定（必須）           |
+| `llm.timeout_seconds`      | API タイムアウト秒数                | 生成が遅いモデルでは大きめに設定       |
+| `llm.prompt`               | LLM へのシステムプロンプト          | 修正ルールを記述                       |
+| `llm.glossary`             | 固有名詞リスト                      | 音声認識誤変換を補正したい用語を列挙   |
 
 ### `text_rules`
 
 - `filler_phrases`: 先頭に来たら削除するフィラー語
 - `markdown_title_patterns`: `# ...` に変換する接頭辞
 - `markdown_heading_patterns`: `## ...` に変換する接頭辞
+
+### `llm` — LLM 後処理
+
+Whisper の文字起こし結果を OpenAI 互換 API へ送り、誤字・固有名詞・表記ゆれを修正します。  
+API が未起動・タイムアウト・エラーの場合は Whisper 結果をそのまま出力します（フォールバック）。
+
+#### 想定接続先（OpenAI 互換 API）
+
+- LM Studio
+- llama.cpp server
+- OpenWebUI
+- OpenAI、Groq など外部 API（文字起こし内容が外部送信される点に注意）
+
+#### `glossary` について
+
+音声認識で誤変換されやすい固有名詞を列挙します。  
+LLM への指示に付加され、類似した誤認識表現を正規形へ修正するよう促します。
+
+```toml
+glossary = [
+  "Kotoba-Whisper",
+  "Real-Time Factor",
+]
+```
 
 ## ファイル構成
 
@@ -118,6 +161,7 @@ tooltip = "whisper-tamas-ui"
 - `recorder.py`: 録音処理
 - `audio_feedback.py`: 効果音
 - `text_rules.py`: フィラー除去と Markdown 整形
+- `llm_client.py`: LLM 後処理クライアント（OpenAI 互換 API）
 - `tray.py`: システムトレイ UI
 - `startup.py`: スタートアップ登録 / 解除支援
 - `build.ps1`: EXE ビルドスクリプト

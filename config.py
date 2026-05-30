@@ -54,6 +54,15 @@ DEFAULT_CONFIG = {
         "enabled": True,
         "tooltip": "whisper-tamas-ui",
     },
+    "llm": {
+        "enabled": False,
+        "base_url": "http://127.0.0.1:1234/v1",
+        "api_key": "",
+        "model": "",
+        "timeout_seconds": 10.0,
+        "prompt": "文字起こし結果の意味を変えず、誤字、固有名詞、表記ゆれのみを修正してください。説明を追加せず、修正後の本文だけを返してください。",
+        "glossary": [],
+    },
 }
 
 

@@ -38,9 +38,9 @@ class TextRules:
             return self.format_markdown_text(text)
         return text
 
-    # フィラー除去→タイトル/見出しパターン判定→箇条書きにフォールバック
+    # タイトル/見出しパターン判定→箇条書きにフォールバック（filler除去は呼び出し元で実施済み）
     def format_markdown_text(self, text: str) -> str:
-        text = self.strip_filler(text).strip()
+        text = text.strip()
         if not text:
             return ""
 

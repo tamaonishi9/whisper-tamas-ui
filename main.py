@@ -10,6 +10,7 @@ from app_controller import AppController
 from config import load_config
 from datas import AppState
 from recorder import PushToTalkRecorder
+from llm_client import LlmClient
 from text_rules import TextRules
 from tray import TrayController
 
@@ -160,6 +161,27 @@ def main() -> None:
     tray_enabled = config["tray"]["enabled"]
     tray_tooltip = config["tray"]["tooltip"]
 
+    # LLM設定読み込みとクライアント初期化
+    llm_config = config.get("llm", {})
+    llm_enabled = llm_config.get("enabled", False)
+    llm_client = None
+
+    if llm_enabled:
+        llm_model = llm_config.get("model", "")
+        if not llm_model:
+            # model未設定時はLLMをスキップしてフォールバック動作を維持
+            logger.warning("LLM is enabled but model is not configured. LLM will be skipped.")
+        else:
+            llm_client = LlmClient(
+                base_url=llm_config.get("base_url", "http://127.0.0.1:1234/v1"),
+                api_key=llm_config.get("api_key", ""),
+                model=llm_model,
+                timeout_seconds=llm_config.get("timeout_seconds", 10.0),
+                prompt=llm_config.get("prompt", ""),
+                glossary=llm_config.get("glossary", []),
+            )
+            logger.info("LLM client initialized: model=%s", llm_model)
+
     logger.info(
         "Config whisper settings: model_size=%s, language=%s, device=%s, compute_type=%s, cpu_threads=%s, num_workers=%s",
         model_size,
@@ -211,6 +233,7 @@ def main() -> None:
         language=language,
         min_record_seconds=min_record_seconds,
         markdown_newlines=markdown_newlines,
+        slm_client=llm_client,
     )
     controller.run()
 
