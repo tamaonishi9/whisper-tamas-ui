@@ -1,5 +1,4 @@
 import queue
-import sys
 import threading
 import time
 from typing import Any
@@ -335,18 +334,19 @@ class AppController:
         # LLM前処理: filler除去（全モード共通、LLM有効時のノイズ抑制も兼ねる）
         text = self.text_rules.strip_filler(raw_text)
 
-        # 直接実行時のみLLM前テキストをデバッグ出力（frozen実行では非表示）
-        if not getattr(sys, "frozen", False):
-            logger.info("--- Before LLM ---\n%s\n-----------------", text)
-
         # LLM後処理（enabled=trueかつmodel設定済みの場合のみ）
         if self.llm_client is not None:
+            # LLM使用時は補正前後をログへ残し、後から補正差分を確認できるようにする
+            logger.info("")
+            logger.info("--- Before LLM ---\n%s\n------------------", text)
             logger.info("Running LLM post-processing...")
             llm_result = self.llm_client.process(text)
             if llm_result is not None:
                 text = llm_result
+                logger.info("--- After LLM ---\n%s\n-----------------", text)
             else:
                 logger.info("LLM post-processing failed, using Whisper result")
+                logger.info("--- After LLM (fallback) ---\n%s\n----------------------------", text)
 
         # 出力モード別整形とクリップボード出力
         try:
