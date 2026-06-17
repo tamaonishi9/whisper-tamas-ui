@@ -230,6 +230,17 @@ class LlmClient:
             f"correct it to the canonical form listed below:\n{terms}"
         )
 
+    # ユーザー本文を補正タスクとして明示し、本文だけを渡した時の無修正応答を避ける
+    def _build_user_content(self, text: str) -> str:
+        return (
+            "以下は音声認識の結果です。\n"
+            "システム指示と用語集に従い、誤認識だけを補正してください。\n"
+            "文脈上不自然な同音・近音の日本語は、自然な技術用語へ補正してください。\n"
+            "返答は補正後の本文のみ。\n\n"
+            "## 音声認識結果\n"
+            f"{text}"
+        )
+
     # OpenAI互換Chat Completions APIを呼び出し、後処理済みテキストを返す。失敗時はNoneを返す
     def process(self, text: str) -> str | None:
         url = f"{self.base_url}/chat/completions"
@@ -239,8 +250,9 @@ class LlmClient:
             "model": self.model,
             "messages": [
                 {"role": "system", "content": self._build_system_content()},
-                {"role": "user", "content": text},
+                {"role": "user", "content": self._build_user_content(text)},
             ],
+            "temperature": 0.0,
         }
 
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
