@@ -1,3 +1,5 @@
+import io
+
 import pystray
 from PIL import Image, ImageDraw
 
@@ -155,6 +157,15 @@ class TrayController:
             self.app_state.should_exit = True
         logger.info("Exit requested from tray")
         icon.stop()
+
+    # PILのPNGエンコーダとC拡張をメインスレッドで事前ロード
+    # frozen実行時、pystrayスレッドからの初回PNGシリアライズで
+    # アーカイブ遅延展開とaccess violationが発生するのを回避する
+    def prewarm_icon_encoder(self) -> None:
+        try:
+            self.create_image(enabled=True).save(io.BytesIO(), format="PNG")
+        except Exception as error:
+            logger.warning("Icon encoder prewarm failed: %s", error)
 
     # トレイアイコンを初期化して起動（ブロッキング）
     def start(self) -> None:

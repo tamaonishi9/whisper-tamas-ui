@@ -216,6 +216,10 @@ def main() -> None:
     app_state = AppState(enabled=tray_enabled)
     tray = TrayController(app_state, tooltip=tray_tooltip)
 
+    # PILのPNGエンコーダをメインスレッドで温めておく
+    # （pystrayスレッドでの初回遅延ロードによるaccess violation回避）
+    tray.prewarm_icon_encoder()
+
     # トレイを別スレッドで起動
     tray_thread = threading.Thread(target=tray.start, daemon=True)
     tray_thread.start()

@@ -8,7 +8,7 @@ hiddenimports = []
 
 binaries += collect_dynamic_libs("ctranslate2")
 
-for package_name in ("faster_whisper", "ctranslate2", "tokenizers"):
+for package_name in ("faster_whisper", "ctranslate2", "tokenizers", "PIL"):
     collected = collect_all(package_name)
     datas += collected[0]
     binaries += collected[1]
