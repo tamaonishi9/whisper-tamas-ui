@@ -233,7 +233,7 @@ def main() -> None:
         language=language,
         min_record_seconds=min_record_seconds,
         markdown_newlines=markdown_newlines,
-        slm_client=llm_client,
+        llm_client=llm_client,
     )
     controller.run()
 
