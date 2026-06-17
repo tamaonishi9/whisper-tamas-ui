@@ -10,7 +10,7 @@ from app_controller import AppController
 from config import load_config
 from datas import AppState
 from recorder import PushToTalkRecorder
-from llm_client import LlmClient, launch_llm_server
+from llm_client import LlmClient, launch_llm_server, stop_llm_server
 from text_rules import TextRules
 from tray import TrayController
 
@@ -188,12 +188,15 @@ def main() -> None:
     llm_config = config.get("llm", {})
     llm_enabled = llm_config.get("enabled", False)
     llm_client = None
+    llm_server_process = None
 
     if llm_enabled:
         # 設定があれば録音前にローカルLLMサーバーを起動しておく
         launch_command = llm_config.get("launch_command", "")
         if launch_command:
-            launch_llm_server(launch_command, cwd=str(get_app_base_dir()))
+            llm_server_process = launch_llm_server(
+                launch_command, cwd=str(get_app_base_dir())
+            )
 
         llm_model = llm_config.get("model", "")
         if not llm_model:
@@ -225,12 +228,14 @@ def main() -> None:
         logger.error(
             "Configuration error: either the Markdown or Plain Text hotkey must be configured"
         )
+        stop_llm_server(llm_server_process)
         return
 
     # モデル読み込み
     logger.info("Loading model...")
     model = create_model(model_size, device, compute_type, cpu_threads, num_workers)
     if model is None:
+        stop_llm_server(llm_server_process)
         return
     logger.info("Model loaded")
 
@@ -267,7 +272,11 @@ def main() -> None:
         markdown_newlines=markdown_newlines,
         llm_client=llm_client,
     )
-    controller.run()
+    try:
+        controller.run()
+    finally:
+        # このアプリが起動したローカルLLMだけを終了し、手動起動済みサーバーは触らない
+        stop_llm_server(llm_server_process)
 
 
 if __name__ == "__main__":

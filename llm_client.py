@@ -89,14 +89,16 @@ def _split_launch_command(command: str) -> tuple[str, str]:
 
 
 # bat/cmdはcmd.exe経由で窓を出さずに起動し、出力はログへ残す
-def _launch_batch_file(command: str, cwd: str | None = None) -> bool:
+def _launch_batch_file(
+    command: str, cwd: str | None = None
+) -> tuple[bool, subprocess.Popen | None]:
     executable, arguments = _split_launch_command(command)
     if not executable:
-        return False
+        return False, None
 
     batch_path = Path(executable)
     if batch_path.suffix.lower() not in {".bat", ".cmd"}:
-        return False
+        return False, None
 
     # 相対パスはアプリ配置ディレクトリ基準で解決し、EXE起動時の作業ディレクトリ差を吸収する
     if not batch_path.is_absolute():
@@ -105,7 +107,7 @@ def _launch_batch_file(command: str, cwd: str | None = None) -> bool:
 
     if not batch_path.is_file():
         logger.warning("LLM launch batch not found: %s", batch_path)
-        return True
+        return True, None
 
     # call経由にしてbatの終了コードをcmd.exeへ伝える
     # cwdをbat配置先へ固定し、cmd.exeのパス引用符解釈による%~dp0破損を避ける
@@ -117,7 +119,7 @@ def _launch_batch_file(command: str, cwd: str | None = None) -> bool:
 
     with _clean_windows_dll_search_path():
         with open(launch_log_path, "a", encoding="utf-8", errors="replace") as log_file:
-            subprocess.Popen(
+            process = subprocess.Popen(
                 ["cmd.exe", "/d", "/c", batch_command],
                 cwd=str(batch_path.parent),
                 env=_build_clean_launch_env(),
@@ -131,21 +133,22 @@ def _launch_batch_file(command: str, cwd: str | None = None) -> bool:
         batch_path.parent,
         launch_log_path,
     )
-    return True
+    return True, process
 
 
 # 設定されたコマンドでローカルLLMサーバーをバックグラウンド起動する
 # 応答は録音完了まで不要なのでfire-and-forgetで待たない
 # bat/cmdは窓なしで起動し、サーバー出力と失敗理由をログに残す
-def launch_llm_server(command: str, cwd: str | None = None) -> None:
+def launch_llm_server(command: str, cwd: str | None = None) -> subprocess.Popen | None:
     try:
         # bat/cmdはShellExecuteではなくcmd.exe /cで起動し、コンソール窓を出さない
-        if _launch_batch_file(command, cwd=cwd):
-            return
+        handled, batch_process = _launch_batch_file(command, cwd=cwd)
+        if handled:
+            return batch_process
 
         # bat/cmd以外の任意コマンドは既存互換のshell実行を維持する
         with _clean_windows_dll_search_path():
-            subprocess.Popen(
+            process = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=cwd,
@@ -153,8 +156,49 @@ def launch_llm_server(command: str, cwd: str | None = None) -> None:
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
         logger.info("LLM server launched: %s (cwd=%s)", command, cwd)
+        return process
     except Exception as e:
         logger.warning("LLM server launch failed: %s", e)
+        return None
+
+
+# このアプリが起動したLLMサーバープロセスツリーだけを終了する
+def stop_llm_server(process: subprocess.Popen | None) -> None:
+    if process is None:
+        return
+
+    if process.poll() is not None:
+        logger.info("LLM server process already exited: pid=%s", process.pid)
+        return
+
+    # Windowsではbat/cmd配下のllama-serverまで含めて、このPopen配下だけを終了する
+    if os.name == "nt":
+        logger.info("Stopping LLM server process tree: pid=%s", process.pid)
+        completed = subprocess.run(
+            ["taskkill.exe", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_build_clean_launch_env(),
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if completed.returncode != 0:
+            logger.warning(
+                "LLM server process tree stop failed: pid=%s output=%s",
+                process.pid,
+                completed.stdout.strip(),
+            )
+        return
+
+    # Windows以外では親プロセスだけを穏当に終了し、残る場合のみ強制終了する
+    logger.info("Stopping LLM server process: pid=%s", process.pid)
+    process.terminate()
+    try:
+        process.wait(timeout=5.0)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 class LlmClient:
