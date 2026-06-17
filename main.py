@@ -10,7 +10,7 @@ from app_controller import AppController
 from config import load_config
 from datas import AppState
 from recorder import PushToTalkRecorder
-from llm_client import LlmClient
+from llm_client import LlmClient, launch_llm_server
 from text_rules import TextRules
 from tray import TrayController
 
@@ -51,10 +51,13 @@ def configure_frozen_dll_directories() -> None:
 
     base_dir = get_app_base_dir()
     internal_dir = base_dir / "_internal"
+    # CUDA系DLL（cublas/cudnn/nvrtc）はcuda_libsにまとめて配置（GPUビルド時のみ存在）
+    cuda_dir = internal_dir / "cuda_libs"
     dll_dirs = [
         internal_dir / "ctranslate2",
         internal_dir / "numpy.libs",
         internal_dir / "onnxruntime" / "capi",
+        cuda_dir,
     ]
 
     for dll_dir in dll_dirs:
@@ -62,10 +65,30 @@ def configure_frozen_dll_directories() -> None:
             os.add_dll_directory(str(dll_dir))
             logger.info("Added DLL directory: %s", dll_dir)
 
+    # CPU実行に必須のDLLを先にプリロード
     preload_dlls = [
         internal_dir / "ctranslate2" / "libiomp5md.dll",
-        internal_dir / "ctranslate2" / "ctranslate2.dll",
     ]
+
+    # GPU(CUDA)DLLを依存順にプリロードする
+    # ctranslate2同梱のcudnn64_8.dllはcudnn_ops/cnn/adv系へ依存するが
+    # それらが自動解決されずクラッシュするため、依存側を先に明示ロードする
+    cuda_preload_names = [
+        "cublas64_12.dll",
+        "cublasLt64_12.dll",
+        "nvrtc64_120_0.dll",
+        "cudnn_ops_infer64_8.dll",
+        "cudnn_ops_train64_8.dll",
+        "cudnn_cnn_infer64_8.dll",
+        "cudnn_cnn_train64_8.dll",
+        "cudnn_adv_infer64_8.dll",
+        "cudnn_adv_train64_8.dll",
+        "cudnn64_8.dll",
+    ]
+    preload_dlls += [cuda_dir / name for name in cuda_preload_names]
+
+    # ctranslate2本体は全依存DLLをロードした後に読み込む
+    preload_dlls.append(internal_dir / "ctranslate2" / "ctranslate2.dll")
 
     for dll_path in preload_dlls:
         if dll_path.is_file():
@@ -167,6 +190,11 @@ def main() -> None:
     llm_client = None
 
     if llm_enabled:
+        # 設定があれば録音前にローカルLLMサーバーを起動しておく
+        launch_command = llm_config.get("launch_command", "")
+        if launch_command:
+            launch_llm_server(launch_command, cwd=str(get_app_base_dir()))
+
         llm_model = llm_config.get("model", "")
         if not llm_model:
             # model未設定時はLLMをスキップしてフォールバック動作を維持

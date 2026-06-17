@@ -1,4 +1,7 @@
 ﻿# -*- mode: python ; coding: utf-8 -*-
+import glob
+import os
+
 from PyInstaller.utils.hooks import collect_all
 from PyInstaller.utils.hooks import collect_dynamic_libs
 
@@ -8,11 +11,19 @@ hiddenimports = []
 
 binaries += collect_dynamic_libs("ctranslate2")
 
-for package_name in ("faster_whisper", "ctranslate2", "tokenizers", "PIL"):
+for package_name in ("faster_whisper", "ctranslate2", "tokenizers", "PIL", "pynput"):
     collected = collect_all(package_name)
     datas += collected[0]
     binaries += collected[1]
     hiddenimports += collected[2]
+
+# GPU(CUDA)実行用DLLをcuda_libsへ同梱する
+# nvidia-cublas-cu12 / nvidia-cudnn-cu12(8.x) / nvidia-cuda-nvrtc-cu12 が必要
+# 未インストール時（CPU専用ビルド）は何も追加されずCPU動作のままになる
+_venv_site = os.path.join(os.getcwd(), ".venv", "Lib", "site-packages")
+for _sub in ("nvidia/cublas/bin", "nvidia/cudnn/bin", "nvidia/cuda_nvrtc/bin"):
+    for _dll in glob.glob(os.path.join(_venv_site, _sub, "*.dll")):
+        binaries.append((_dll, "cuda_libs"))
 
 
 a = Analysis(

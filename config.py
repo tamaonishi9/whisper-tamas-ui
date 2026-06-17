@@ -62,6 +62,7 @@ DEFAULT_CONFIG = {
         "timeout_seconds": 10.0,
         "prompt": "文字起こし結果の意味を変えず、誤字、固有名詞、表記ゆれのみを修正してください。説明を追加せず、修正後の本文だけを返してください。",
         "glossary": [],
+        "launch_command": "",
     },
 }
 

@@ -4,8 +4,8 @@ import threading
 import time
 from typing import Any
 
-import keyboard
 import pyperclip
+from pynput import keyboard as pynput_keyboard
 
 from app_logging import get_logger
 from audio_feedback import play_done_sound, play_error_sound, play_start_sound
@@ -16,6 +16,58 @@ from tray import TrayController
 
 
 logger = get_logger(__name__)
+
+
+# pynputを使ってキー押下状態をスレッドセーフに追跡する
+# keyboardライブラリのSetWindowsHookEx access violation問題を回避
+class _HotkeyChecker:
+    _KEY_MAP = {
+        pynput_keyboard.Key.alt: 'alt',
+        pynput_keyboard.Key.alt_l: 'alt',
+        pynput_keyboard.Key.alt_r: 'alt',
+        pynput_keyboard.Key.ctrl: 'ctrl',
+        pynput_keyboard.Key.ctrl_l: 'ctrl',
+        pynput_keyboard.Key.ctrl_r: 'ctrl',
+        pynput_keyboard.Key.shift: 'shift',
+        pynput_keyboard.Key.shift_l: 'shift',
+        pynput_keyboard.Key.shift_r: 'shift',
+    }
+
+    def __init__(self) -> None:
+        self._pressed: set[str] = set()
+        self._lock = threading.Lock()
+        self._listener = pynput_keyboard.Listener(
+            on_press=self._on_press,
+            on_release=self._on_release,
+        )
+        self._listener.daemon = True
+        self._listener.start()
+
+    def _normalize(self, key: object) -> str:
+        if key in self._KEY_MAP:
+            return self._KEY_MAP[key]
+        if hasattr(key, 'char') and key.char:
+            return key.char.lower()
+        if hasattr(key, 'name') and key.name:
+            return key.name.lower()
+        return str(key)
+
+    def _on_press(self, key: object) -> None:
+        with self._lock:
+            self._pressed.add(self._normalize(key))
+
+    def _on_release(self, key: object) -> None:
+        with self._lock:
+            self._pressed.discard(self._normalize(key))
+
+    def is_pressed(self, hotkey: str) -> bool:
+        # "alt+q" 形式のhotkey文字列が現在押されているか確認
+        parts = [p.strip().lower() for p in hotkey.split('+')]
+        with self._lock:
+            return all(p in self._pressed for p in parts)
+
+    def stop(self) -> None:
+        self._listener.stop()
 
 
 class AppController:
@@ -51,6 +103,9 @@ class AppController:
         self._queue: queue.Queue = queue.Queue()
         self._worker_thread = threading.Thread(target=self._worker, daemon=True)
         self._worker_thread.start()
+
+        # キー状態の追跡を開始（pynputリスナースレッド起動）
+        self._hotkey_checker = _HotkeyChecker()
 
     # キューから録音データを取り出して順番に処理するワーカー
     def _worker(self) -> None:
@@ -97,7 +152,7 @@ class AppController:
                     input_mode = self.app_state.input_mode
 
                 # 終了ホットキーチェック
-                if self.exit_hotkey is not None and keyboard.is_pressed(self.exit_hotkey):
+                if self.exit_hotkey is not None and self._hotkey_checker.is_pressed(self.exit_hotkey):
                     logger.info("Exiting")
                     break
 
@@ -122,11 +177,11 @@ class AppController:
                 # キー押下状態を取得
                 markdown_pressed = (
                     self.hotkey_markdown is not None
-                    and keyboard.is_pressed(self.hotkey_markdown)
+                    and self._hotkey_checker.is_pressed(self.hotkey_markdown)
                 )
                 plain_text_pressed = (
                     self.hotkey_plain_text is not None
-                    and keyboard.is_pressed(self.hotkey_plain_text)
+                    and self._hotkey_checker.is_pressed(self.hotkey_plain_text)
                 )
 
                 if markdown_pressed:
@@ -157,7 +212,7 @@ class AppController:
                     elif (
                         self.recorder.is_recording
                         and active_hotkey is not None
-                        and not keyboard.is_pressed(active_hotkey)
+                        and not self._hotkey_checker.is_pressed(active_hotkey)
                     ):
                         self.finish_recording(record_mode, record_start)
                         record_mode = None
@@ -211,6 +266,7 @@ class AppController:
             if self.recorder.is_recording:
                 self.recorder.stop()
 
+            self._hotkey_checker.stop()
             self.tray.stop()
 
     # サウンド再生→ストリーム開始→AppState更新。失敗時はNoneを返す
